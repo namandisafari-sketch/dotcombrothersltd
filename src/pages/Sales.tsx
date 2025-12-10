@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { printReceipt } from "@/utils/receiptPrinter";
 import { printInvoice } from "@/utils/invoicePrinter";
 import { reduceStock, checkStockAvailability, checkVariantStockAvailability } from "@/utils/stockManagement";
@@ -84,7 +84,12 @@ const Sales = () => {
     queryKey: ["department-settings", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return null;
-      return localApi.settings.getDepartmentSettings(selectedDepartmentId);
+      const { data } = await supabase
+        .from("settings")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .maybeSingle();
+      return data;
     },
     enabled: !!selectedDepartmentId,
   });
@@ -92,7 +97,10 @@ const Sales = () => {
   // Fallback to global settings if no department settings
   const { data: globalSettings } = useQuery({
     queryKey: ["global-settings"],
-    queryFn: () => localApi.settings.get(),
+    queryFn: async () => {
+      const { data } = await supabase.from("settings").select("*").maybeSingle();
+      return data;
+    },
   });
 
   const { data: products } = useQuery({
@@ -100,7 +108,12 @@ const Sales = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      const allProducts = await localApi.products.getAll(selectedDepartmentId);
+      const { data: allProducts } = await supabase
+        .from("products")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      
+      if (!allProducts) return [];
       
       let filteredProducts = allProducts.filter((p: any) => !p.is_archived);
       
@@ -121,8 +134,8 @@ const Sales = () => {
       
       // Get variants for products
       const productIds = filteredProducts.map((p: any) => p.id);
-      const allVariants = await localApi.productVariants.getAll();
-      const variantsForProducts = allVariants.filter((v: any) => productIds.includes(v.product_id));
+      const { data: allVariants } = await supabase.from("product_variants").select("*");
+      const variantsForProducts = (allVariants || []).filter((v: any) => productIds.includes(v.product_id));
       
       const productsWithVariants = new Set(
         variantsForProducts.map((v: any) => v.product_id)
@@ -130,7 +143,7 @@ const Sales = () => {
       
       // Filter out perfume products and filter by stock
       const finalFiltered = filteredProducts.filter((product: any) => {
-        if (product.tracking_type === 'milliliter') return false;
+        if (product.tracking_type === 'ml') return false;
         if (product.name === "Oil Perfume") return false;
         if (productsWithVariants.has(product.id)) return true;
         return product.current_stock > 0;
@@ -148,8 +161,8 @@ const Sales = () => {
       if (!products || products.length === 0) return {};
       
       const productIds = products.map((p: any) => p.id);
-      const allVariants = await localApi.productVariants.getAll();
-      const relevantVariants = allVariants.filter((v: any) => productIds.includes(v.product_id));
+      const { data: allVariants } = await supabase.from("product_variants").select("*");
+      const relevantVariants = (allVariants || []).filter((v: any) => productIds.includes(v.product_id));
       
       const counts: Record<string, number> = {};
       relevantVariants.forEach((variant: any) => {
@@ -167,10 +180,11 @@ const Sales = () => {
     queryFn: async () => {
       if (!selectedProductForVariant?.id) return [];
       
-      const allVariants = await localApi.productVariants.getAll();
-      return allVariants
-        .filter((v: any) => v.product_id === selectedProductForVariant.id)
-        .sort((a: any, b: any) => a.variant_name?.localeCompare(b.variant_name || '') || 0);
+      const { data: variants } = await supabase
+        .from("product_variants")
+        .select("*")
+        .eq("product_id", selectedProductForVariant.id);
+      return (variants || []).sort((a: any, b: any) => a.variant_name?.localeCompare(b.variant_name || '') || 0);
     },
     enabled: !!selectedProductForVariant?.id,
   });
@@ -180,26 +194,40 @@ const Sales = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      const allCustomers = await localApi.customers.getAll(selectedDepartmentId);
-      return allCustomers.sort((a: any, b: any) => a.name.localeCompare(b.name));
+      const { data: allCustomers } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      return (allCustomers || []).sort((a: any, b: any) => a.name.localeCompare(b.name));
     },
     enabled: !!selectedDepartmentId,
   });
 
   const { data: departments = [] } = useQuery({
     queryKey: ["departments"],
-    queryFn: () => localApi.departments.getAll(),
+    queryFn: async () => {
+      const { data } = await supabase.from("departments").select("*");
+      return data || [];
+    },
   });
 
   // Fetch current user profile for cashier name
   useQuery({
     queryKey: ["current-user-profile"],
     queryFn: async () => {
-      const userData = await localApi.auth.getCurrentUser();
-      if (userData?.full_name) {
-        setCashierName(userData.full_name);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.full_name) {
+          setCashierName(profile.full_name);
+        }
+        return profile;
       }
-      return userData;
+      return null;
     },
   });
 
@@ -209,8 +237,11 @@ const Sales = () => {
       if (!selectedDepartmentId) return [];
       
       // Check if current department is mobile money or perfume
-      const currentDept = await localApi.departments.getAll()
-        .then((depts: any[]) => depts.find((d: any) => d.id === selectedDepartmentId));
+      const { data: currentDept } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", selectedDepartmentId)
+        .maybeSingle();
       
       // Don't show services if department is mobile money or perfume
       if (currentDept?.is_mobile_money || currentDept?.is_perfume_department) {
@@ -218,9 +249,12 @@ const Sales = () => {
       }
       
       // Show services from the current department only
-      const allServices = await localApi.services.getAll(selectedDepartmentId);
+      const { data: allServices } = await supabase
+        .from("services")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
       
-      let filtered = allServices;
+      let filtered = allServices || [];
       if (searchQuery) {
         const lowerSearch = searchQuery.toLowerCase();
         filtered = filtered.filter((s: any) => s.name?.toLowerCase().includes(lowerSearch));
@@ -233,8 +267,11 @@ const Sales = () => {
 
   const handleProductClick = async (product: any) => {
     // Check if product has variants
-    const allVariants = await localApi.productVariants.getAll();
-    const variants = allVariants.filter((v: any) => v.product_id === product.id).slice(0, 1);
+    const { data: variants } = await supabase
+      .from("product_variants")
+      .select("*")
+      .eq("product_id", product.id)
+      .limit(1);
     
     if (variants && variants.length > 0) {
       // Show variant selector
@@ -408,17 +445,20 @@ const Sales = () => {
     console.log('Scanning barcode:', scannedBarcode);
     
     // First, check if barcode matches a variant
-    const allVariants = await localApi.productVariants.getAll();
-    const matchingVariants = allVariants.filter((v: any) => v.barcode === scannedBarcode);
+    const { data: allVariants } = await supabase.from("product_variants").select("*");
+    const matchingVariants = (allVariants || []).filter((v: any) => v.barcode === scannedBarcode);
     
     if (matchingVariants.length > 0) {
       const variant = matchingVariants[0];
-      const allProducts = await localApi.products.getAll(selectedDepartmentId);
-      const product = allProducts.find((p: any) => p.id === variant.product_id);
+      const { data: allProducts } = await supabase
+        .from("products")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      const product = (allProducts || []).find((p: any) => p.id === variant.product_id);
       
       if (product) {
         // Add variant directly to cart with variant price
-        addToCart(product, "product", variant.id, variant.variant_name, variant.selling_price || variant.price_adjustment || 0);
+        addToCart(product, "product", variant.id, variant.variant_name, variant.price || 0);
         
         toast.success(`${product.name} - ${variant.variant_name} added!`);
         setBarcode('');
@@ -427,22 +467,25 @@ const Sales = () => {
     }
 
     // If no variant found, search for product by barcode or internal_barcode
-      const allProducts = await localApi.products.getAll(selectedDepartmentId);
-    const matchedProducts = allProducts.filter((p: any) => 
+    const { data: allProducts } = await supabase
+      .from("products")
+      .select("*")
+      .eq("department_id", selectedDepartmentId);
+    const matchedProducts = (allProducts || []).filter((p: any) => 
       p.barcode === scannedBarcode || p.internal_barcode === scannedBarcode
     ).slice(0, 1);
 
     if (matchedProducts && matchedProducts.length > 0) {
       const product = matchedProducts[0];
-      const productVariants = allVariants.filter((v: any) => v.product_id === product.id);
+      const productVars = (allVariants || []).filter((v: any) => v.product_id === product.id);
       
-      if (productVariants.length > 0) {
+      if (productVars.length > 0) {
         // Show variant selector if product has variants
         setSelectedProductForVariant({
           id: product.id,
           name: product.name,
           price: product.selling_price,
-          variants: productVariants
+          variants: productVars
         });
         setShowVariantSelector(true);
       } else {
@@ -619,13 +662,14 @@ const Sales = () => {
           department_id: mockSaleData.department_id,
           cashier_name: mockSaleData.cashier_name,
           customer_id: mockSaleData.customer_id,
-          payment_method: mockSaleData.payment_method,
+          payment_method: mockSaleData.payment_method as "cash" | "card" | "mobile_money" | "credit",
           subtotal: mockSaleData.subtotal,
           total: mockSaleData.total,
           amount_paid: mockSaleData.amount_paid,
           change_amount: mockSaleData.change,
           receipt_number: `RCP${String(Date.now()).slice(-6)}`,
-          status: 'completed',
+          sale_number: `SALE${String(Date.now()).slice(-8)}`,
+          status: 'completed' as const,
         },
         items: cart.map((item) => ({
           product_id: item.productId || null,
@@ -641,11 +685,26 @@ const Sales = () => {
         }))
       };
       
-      const insertedSale = await localApi.sales.create(salePayload);
+      // Insert sale
+      const { data: insertedSale, error: saleError } = await supabase
+        .from("sales")
+        .insert([salePayload.sale])
+        .select()
+        .single();
 
-      if (!insertedSale || !insertedSale.id) {
+      if (saleError || !insertedSale) {
         throw new Error("Failed to save sale");
       }
+
+      // Insert sale items
+      const itemsWithSaleId = salePayload.items.map((item: any) => ({
+        ...item,
+        sale_id: insertedSale.id,
+        name: item.item_name,
+        total: item.subtotal,
+      }));
+      
+      await supabase.from("sale_items").insert(itemsWithSaleId);
 
       // Update mock sale data with actual sale ID and receipt number
       mockSaleData.id = insertedSale.id;

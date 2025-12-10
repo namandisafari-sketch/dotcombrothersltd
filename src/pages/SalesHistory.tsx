@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,17 +39,26 @@ const SalesHistory = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      const params: any = { departmentId: selectedDepartmentId };
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
+      let query = supabase
+        .from("sales")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .order("created_at", { ascending: false });
       
-      const salesData = await localApi.sales.getAll(params);
+      if (startDate) query = query.gte("created_at", startDate);
+      if (endDate) query = query.lte("created_at", endDate + "T23:59:59");
+      
+      const { data: salesData } = await query;
+      if (!salesData) return [];
       
       // Fetch sale items for each sale
       const salesWithItems = await Promise.all(
         salesData.map(async (sale: any) => {
-          const items = await localApi.saleItems.getBySale(sale.id);
-          return { ...sale, sale_items: items };
+          const { data: items } = await supabase
+            .from("sale_items")
+            .select("*")
+            .eq("sale_id", sale.id);
+          return { ...sale, sale_items: items || [] };
         })
       );
       
@@ -71,7 +80,11 @@ const SalesHistory = () => {
   const voidMutation = useMutation({
     mutationFn: async ({ saleId, reason }: { saleId: string; reason: string }) => {
       if (!user) throw new Error("No user found");
-      return await localApi.sales.voidSale(saleId, reason, user.id);
+      const { error } = await supabase
+        .from("sales")
+        .update({ status: "voided", void_reason: reason, voided_by: user.id, voided_at: new Date().toISOString() })
+        .eq("id", saleId);
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Sale voided successfully");
@@ -116,11 +129,17 @@ const SalesHistory = () => {
     // Fetch settings for receipt
     let settings = null;
     if (sale.department_id) {
-      settings = await localApi.settings.getDepartmentSettings(sale.department_id);
+      const { data } = await supabase
+        .from("settings")
+        .select("*")
+        .eq("department_id", sale.department_id)
+        .maybeSingle();
+      settings = data;
     }
 
     if (!settings) {
-      settings = await localApi.settings.get();
+      const { data } = await supabase.from("settings").select("*").maybeSingle();
+      settings = data;
     }
 
     const receiptData = {

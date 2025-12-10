@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { RegularDepartmentSelector } from "@/components/RegularDepartmentSelector";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useDepartment } from "@/contexts/DepartmentContext";
@@ -51,7 +51,10 @@ const Reports = () => {
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["settings"],
-    queryFn: () => localApi.settings.get(),
+    queryFn: async () => {
+      const { data } = await supabase.from("settings").select("*").maybeSingle();
+      return data;
+    },
   });
 
   const { data: salesData, refetch: refetchSales } = useQuery({
@@ -60,20 +63,25 @@ const Reports = () => {
       if (!selectedDepartmentId) return [];
       
       const { start, end } = getDateRange();
-      const params: any = {
-        departmentId: selectedDepartmentId,
-        startDate: start,
-        endDate: end,
-        status: 'completed'
-      };
       
-      const sales = await localApi.sales.getAll(params);
+      const { data: sales } = await supabase
+        .from("sales")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .eq("status", "completed");
       
-      // Fetch sale items with product/service details for each sale
+      if (!sales) return [];
+      
+      // Fetch sale items for each sale
       const salesWithItems = await Promise.all(
         sales.map(async (sale: any) => {
-          const items = await localApi.saleItems.getBySale(sale.id);
-          return { ...sale, sale_items: items };
+          const { data: items } = await supabase
+            .from("sale_items")
+            .select("*")
+            .eq("sale_id", sale.id);
+          return { ...sale, sale_items: items || [] };
         })
       );
       
@@ -91,7 +99,11 @@ const Reports = () => {
     queryKey: ["products-stock", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      return await localApi.products.getAll(selectedDepartmentId);
+      const { data } = await supabase
+        .from("products")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
   });
@@ -102,11 +114,12 @@ const Reports = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      const { start, end } = getDateRange();
-      return await localApi.credits.getAll({
-        department_id: selectedDepartmentId,
-        is_admin: isAdmin,
-      });
+      let query = supabase.from("credits").select("*");
+      if (!isAdmin) {
+        query = query.or(`from_department_id.eq.${selectedDepartmentId},to_department_id.eq.${selectedDepartmentId}`);
+      }
+      const { data } = await query;
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
     refetchOnWindowFocus: true,
@@ -120,12 +133,14 @@ const Reports = () => {
       if (!selectedDepartmentId) return [];
       
       const { start, end } = getDateRange();
-      return await localApi.reconciliations.getAll({
-        departmentId: selectedDepartmentId,
-        startDate: start.split("T")[0],
-        endDate: end.split("T")[0],
-        status: 'approved'
-      });
+      const { data } = await supabase
+        .from("reconciliations")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .gte("date", start.split("T")[0])
+        .lte("date", end.split("T")[0])
+        .eq("status", "approved");
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
     refetchOnWindowFocus: true,
@@ -139,11 +154,13 @@ const Reports = () => {
       if (!selectedDepartmentId) return [];
       
       const { start, end } = getDateRange();
-      return await localApi.expenses.getAll({
-        departmentId: selectedDepartmentId,
-        startDate: start.split("T")[0],
-        endDate: end.split("T")[0]
-      });
+      const { data } = await supabase
+        .from("expenses")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .gte("expense_date", start.split("T")[0])
+        .lte("expense_date", end.split("T")[0]);
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
     refetchOnWindowFocus: true,
@@ -156,8 +173,11 @@ const Reports = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      const { start, end } = getDateRange();
-      return await localApi.suspendedRevenue.getAll(selectedDepartmentId);
+      const { data } = await supabase
+        .from("suspended_revenue")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
     refetchOnWindowFocus: true,
@@ -237,7 +257,7 @@ const Reports = () => {
   ).reduce((sum, c) => sum + Number(c.amount), 0) || 0;
   
   // Calculate reconciliation differences (only approved ones)
-  const reconciliationDifferences = reconciliations?.reduce((sum, r) => sum + Number(r.difference), 0) || 0;
+  const reconciliationDifferences = reconciliations?.reduce((sum, r) => sum + Number(r.discrepancy), 0) || 0;
   
   // Calculate total expenses
   const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
@@ -350,12 +370,12 @@ const Reports = () => {
     return hasZeroPrice || hasDuplicates;
   }) || [];
 
-  // Low stock items - handle both unit and milliliter tracking
+  // Low stock items - handle both unit and ml tracking
   const lowStockItems = products?.filter(p => {
-    if (p.tracking_type === 'milliliter') {
-      return (p.current_stock_ml || 0) <= (p.reorder_level || 0);
+    if (p.tracking_type === 'ml') {
+      return (p.total_ml || 0) <= (p.min_stock || 0);
     }
-    return (p.current_stock || 0) <= (p.reorder_level || 0);
+    return (p.current_stock || 0) <= (p.min_stock || 0);
   }).slice(0, 5) || [];
   
   const isPerfumeDepartment = selectedDepartment?.is_perfume_department;
@@ -884,17 +904,17 @@ const Reports = () => {
                       <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell className="text-right">
                         <Badge variant={
-                          (product.tracking_type === 'milliliter' ? (product.current_stock_ml || 0) : (product.current_stock || 0)) === 0 
+                          (product.tracking_type === 'ml' ? (product.total_ml || 0) : (product.current_stock || 0)) === 0 
                             ? "destructive" 
                             : "secondary"
                         }>
-                          {product.tracking_type === 'milliliter' 
-                            ? `${product.current_stock_ml || 0} ml` 
+                          {product.tracking_type === 'ml' 
+                            ? `${product.total_ml || 0} ml` 
                             : `${product.current_stock || 0} ${product.unit}`}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {product.reorder_level} {product.tracking_type === 'milliliter' ? 'ml' : product.unit}
+                        {product.min_stock} {product.tracking_type === 'ml' ? 'ml' : product.unit}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +42,7 @@ const Credits = () => {
   const { data: departments } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
-      const data = await localApi.departments.getAll();
+      const { data } = await supabase.from("departments").select("*");
       return data || [];
     },
   });
@@ -50,16 +50,19 @@ const Credits = () => {
   const { data: credits, isLoading } = useQuery({
     queryKey: ["credits", selectedDepartmentId, isAdmin],
     queryFn: async () => {
-      const data = await localApi.credits.getAll({
-        department_id: selectedDepartmentId || undefined,
-        is_admin: isAdmin,
-      });
+      let query = supabase.from("credits").select("*, from_dept:departments!credits_from_department_id_fkey(name), to_dept:departments!credits_to_department_id_fkey(name)");
+      
+      if (!isAdmin && selectedDepartmentId) {
+        query = query.or(`from_department_id.eq.${selectedDepartmentId},to_department_id.eq.${selectedDepartmentId}`);
+      }
+      
+      const { data } = await query;
       
       // Transform to match expected format
-      return data.map((credit: any) => ({
+      return (data || []).map((credit: any) => ({
         ...credit,
-        from_department: { name: credit.from_department_name },
-        to_department: { name: credit.to_department_name },
+        from_department: { name: credit.from_dept?.name },
+        to_department: { name: credit.to_dept?.name },
       }));
     },
     enabled: true,
@@ -67,7 +70,8 @@ const Credits = () => {
 
   const createCreditMutation = useMutation({
     mutationFn: async (data: any) => {
-      await localApi.credits.create(data);
+      const { error } = await supabase.from("credits").insert(data);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["credits"] });
@@ -102,12 +106,14 @@ const Credits = () => {
         ? credit.to_department_id 
         : credit.from_department_id;
 
-      await localApi.credits.sendNotification(creditId, {
+      const { error } = await supabase.from("interdepartmental_inbox").insert({
         from_department_id: selectedDepartmentId || null,
         to_department_id: toDepartmentId,
         subject: `Credit Payment Notification - ${credit.purpose}`,
         message: message,
+        credit_id: creditId,
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast({ title: "Notification sent successfully" });
@@ -126,7 +132,11 @@ const Credits = () => {
 
   const updateCreditStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: "approved" | "rejected" }) => {
-      await localApi.credits.updateStatus(id, status);
+      const { error } = await supabase
+        .from("credits")
+        .update({ status, approved_at: status === "approved" ? new Date().toISOString() : null })
+        .eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["credits"] });
@@ -143,7 +153,11 @@ const Credits = () => {
 
   const settleCreditMutation = useMutation({
     mutationFn: async (id: string) => {
-      await localApi.credits.settle(id);
+      const { error } = await supabase
+        .from("credits")
+        .update({ settlement_status: "settled" })
+        .eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["credits"] });

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,15 +46,23 @@ const AdminReports = () => {
   const { data: financialData, isLoading } = useQuery({
     queryKey: ["financial-data", period],
     queryFn: async () => {
-      const [sales, expenses, credits, products, customers, reconciliations, departments] = await Promise.all([
-        localApi.sales.getAll(),
-        localApi.expenses.getAll(),
-        localApi.credits.getAll(),
-        localApi.products.getAll(),
-        localApi.customers.getAll(),
-        localApi.reconciliations.getAll(),
-        localApi.departments.getAll(),
+      const [salesRes, expensesRes, creditsRes, productsRes, customersRes, reconciliationsRes, departmentsRes] = await Promise.all([
+        supabase.from("sales").select("*"),
+        supabase.from("expenses").select("*"),
+        supabase.from("credits").select("*"),
+        supabase.from("products").select("*"),
+        supabase.from("customers").select("*"),
+        supabase.from("reconciliations").select("*"),
+        supabase.from("departments").select("*"),
       ]);
+      
+      const sales = salesRes.data || [];
+      const expenses = expensesRes.data || [];
+      const credits = creditsRes.data || [];
+      const products = productsRes.data || [];
+      const customers = customersRes.data || [];
+      const reconciliations = reconciliationsRes.data || [];
+      const departments = departmentsRes.data || [];
 
       // Filter by date range
       const filteredSales = sales.filter((sale: any) => {
