@@ -86,6 +86,21 @@ Deno.serve(async (req) => {
 
     console.log(`User created with ID: ${authData.user.id}`);
 
+    // Create profile (trigger may not be set up)
+    const { error: profileError } = await supabaseClient
+      .from('profiles')
+      .upsert({
+        id: authData.user.id,
+        email: email,
+        full_name: fullName,
+        is_active: true,
+      }, { onConflict: 'id' });
+
+    if (profileError) {
+      console.error('Profile creation error:', profileError);
+      // Don't fail - profile might already exist from trigger
+    }
+
     // First delete all existing roles, then insert the new one
     const { error: deleteError } = await supabaseClient
       .from('user_roles')
@@ -109,9 +124,6 @@ Deno.serve(async (req) => {
       console.error('Role creation error:', roleError);
       throw roleError;
     }
-
-    // Department is stored in user_roles, not in profiles
-    // Profile is auto-created by the handle_new_user trigger
 
     // Insert navigation permissions if provided and user is not admin
     if (navPermissions && Array.isArray(navPermissions) && navPermissions.length > 0 && role !== 'admin') {
