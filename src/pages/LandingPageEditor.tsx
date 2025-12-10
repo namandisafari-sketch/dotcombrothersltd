@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,6 @@ export default function LandingPageEditor() {
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
 
-  // Check if admin needs to enter passcode
   useEffect(() => {
     if (isAdmin) {
       const accessGranted = sessionStorage.getItem("landing_editor_access");
@@ -34,7 +33,6 @@ export default function LandingPageEditor() {
         setShowPasscodeDialog(true);
       }
     } else {
-      // Non-admins shouldn't access this page
       navigate("/dashboard");
     }
   }, [isAdmin, navigate]);
@@ -53,7 +51,7 @@ export default function LandingPageEditor() {
   const { data: content, isLoading: contentLoading } = useQuery({
     queryKey: ["landing-page-content-admin"],
     queryFn: async () => {
-      const data = await localApi.landingPageContent.getAll();
+      const { data } = await supabase.from("landing_page_content").select("*").order("order_index");
       return data || [];
     },
   });
@@ -61,14 +59,15 @@ export default function LandingPageEditor() {
   const { data: services, isLoading: servicesLoading } = useQuery({
     queryKey: ["service-showcase-admin"],
     queryFn: async () => {
-      const data = await localApi.serviceShowcase.getAll();
+      const { data } = await supabase.from("service_showcase").select("*").order("display_order");
       return data || [];
     },
   });
 
   const updateContentMutation = useMutation({
     mutationFn: async (data: any) => {
-      await localApi.landingPageContent.update(data.id, data);
+      const { error } = await supabase.from("landing_page_content").update(data).eq("id", data.id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["landing-page-content-admin"] });
@@ -81,7 +80,8 @@ export default function LandingPageEditor() {
 
   const updateServiceMutation = useMutation({
     mutationFn: async (data: any) => {
-      await localApi.serviceShowcase.update(data.id, data);
+      const { error } = await supabase.from("service_showcase").update(data).eq("id", data.id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["service-showcase-admin"] });
@@ -94,7 +94,8 @@ export default function LandingPageEditor() {
 
   const deleteServiceMutation = useMutation({
     mutationFn: async (id: string) => {
-      await localApi.serviceShowcase.delete(id);
+      const { error } = await supabase.from("service_showcase").delete().eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["service-showcase-admin"] });
@@ -107,13 +108,12 @@ export default function LandingPageEditor() {
 
   const addServiceMutation = useMutation({
     mutationFn: async () => {
-      await localApi.serviceShowcase.create({
-        name: "New Service",
+      const { error } = await supabase.from("service_showcase").insert({
+        title: "New Service",
         description: "Service description",
-        icon: "Users",
-        features: ["Feature 1", "Feature 2"],
         display_order: services?.length || 0,
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["service-showcase-admin"] });
@@ -202,12 +202,12 @@ export default function LandingPageEditor() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`subtitle-${section.id}`}>Subtitle</Label>
+                      <Label htmlFor={`image-${section.id}`}>Image URL</Label>
                       <Input
-                        id={`subtitle-${section.id}`}
-                        value={section.subtitle || ""}
+                        id={`image-${section.id}`}
+                        value={section.image_url || ""}
                         onChange={(e) => {
-                          const updated = { ...section, subtitle: e.target.value };
+                          const updated = { ...section, image_url: e.target.value };
                           queryClient.setQueryData(["landing-page-content-admin"], (old: any) =>
                             old.map((s: any) => (s.id === section.id ? updated : s))
                           );
@@ -273,7 +273,7 @@ export default function LandingPageEditor() {
                       <div className="flex items-center gap-3">
                         <GripVertical className="h-5 w-5 text-muted-foreground" />
                         <div>
-                          <CardTitle>{service.name}</CardTitle>
+                          <CardTitle>{service.title}</CardTitle>
                           <CardDescription>Order: {service.display_order}</CardDescription>
                         </div>
                       </div>
@@ -298,11 +298,11 @@ export default function LandingPageEditor() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>Name</Label>
+                        <Label>Title</Label>
                         <Input
-                          value={service.name}
+                          value={service.title}
                           onChange={(e) => {
-                            const updated = { ...service, name: e.target.value };
+                            const updated = { ...service, title: e.target.value };
                             queryClient.setQueryData(["service-showcase-admin"], (old: any) =>
                               old.map((s: any) => (s.id === service.id ? updated : s))
                             );
@@ -311,17 +311,17 @@ export default function LandingPageEditor() {
                         />
                       </div>
                       <div>
-                        <Label>Icon Name</Label>
+                        <Label>Price</Label>
                         <Input
-                          value={service.icon || ""}
+                          value={service.price || ""}
                           onChange={(e) => {
-                            const updated = { ...service, icon: e.target.value };
+                            const updated = { ...service, price: e.target.value };
                             queryClient.setQueryData(["service-showcase-admin"], (old: any) =>
                               old.map((s: any) => (s.id === service.id ? updated : s))
                             );
                           }}
                           onBlur={() => updateServiceMutation.mutate(service)}
-                          placeholder="e.g., ShoppingCart"
+                          placeholder="e.g., Starting at $99"
                         />
                       </div>
                     </div>
@@ -340,20 +340,17 @@ export default function LandingPageEditor() {
                       />
                     </div>
                     <div>
-                      <Label>Features (comma-separated)</Label>
-                      <Textarea
-                        value={service.features?.join(", ") || ""}
+                      <Label>Image URL</Label>
+                      <Input
+                        value={service.image_url || ""}
                         onChange={(e) => {
-                          const updated = { 
-                            ...service, 
-                            features: e.target.value.split(",").map(f => f.trim()).filter(Boolean)
-                          };
+                          const updated = { ...service, image_url: e.target.value };
                           queryClient.setQueryData(["service-showcase-admin"], (old: any) =>
                             old.map((s: any) => (s.id === service.id ? updated : s))
                           );
                         }}
                         onBlur={() => updateServiceMutation.mutate(service)}
-                        rows={2}
+                        placeholder="https://example.com/image.jpg"
                       />
                     </div>
                     <div className="flex items-center gap-4">

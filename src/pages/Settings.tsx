@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { DepartmentManager } from "@/components/DepartmentManager";
 import { DataBackup } from "@/components/DataBackup";
@@ -37,18 +37,27 @@ const Settings = () => {
 
   const { data: departments } = useQuery({
     queryKey: ["departments"],
-    queryFn: () => localApi.departments.getAll(),
+    queryFn: async () => {
+      const { data } = await supabase.from("departments").select("*").order("name");
+      return data || [];
+    },
     enabled: isAdmin,
   });
 
   const { data: globalSettings } = useQuery({
     queryKey: ["global-settings"],
-    queryFn: () => localApi.settings.get(),
+    queryFn: async () => {
+      const { data } = await supabase.from("settings").select("*").is("department_id", null).maybeSingle();
+      return data;
+    },
   });
 
   const { data: departmentSettings } = useQuery({
     queryKey: ["department-settings", selectedDepartmentId],
-    queryFn: () => localApi.settings.getDepartmentSettings(selectedDepartmentId),
+    queryFn: async () => {
+      const { data } = await supabase.from("settings").select("*").eq("department_id", selectedDepartmentId).maybeSingle();
+      return data;
+    },
     enabled: !!selectedDepartmentId && selectedDepartmentId !== "global",
   });
 
@@ -102,9 +111,23 @@ const Settings = () => {
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       if (selectedDepartmentId && selectedDepartmentId !== "global") {
-        return localApi.settings.updateDepartmentSettings(selectedDepartmentId, data);
+        const { data: existing } = await supabase.from("settings").select("id").eq("department_id", selectedDepartmentId).maybeSingle();
+        if (existing) {
+          const { error } = await supabase.from("settings").update(data).eq("department_id", selectedDepartmentId);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("settings").insert({ ...data, department_id: selectedDepartmentId });
+          if (error) throw error;
+        }
       } else {
-        return localApi.settings.update(data);
+        const { data: existing } = await supabase.from("settings").select("id").is("department_id", null).maybeSingle();
+        if (existing) {
+          const { error } = await supabase.from("settings").update(data).is("department_id", null);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("settings").insert(data);
+          if (error) throw error;
+        }
       }
     },
     onSuccess: () => {

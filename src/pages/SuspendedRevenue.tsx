@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,9 @@ const SuspendedRevenue = () => {
   const { data: suspendedRevenue } = useQuery({
     queryKey: ["suspended-revenue", departmentId],
     queryFn: async () => {
-      const data = await localApi.suspendedRevenue.getAll(isAdmin ? undefined : departmentId);
+      let query = supabase.from("suspended_revenue").select("*").order("created_at", { ascending: false });
+      if (!isAdmin && departmentId) query = query.eq("department_id", departmentId);
+      const { data } = await query;
       return data || [];
     },
   });
@@ -40,8 +42,7 @@ const SuspendedRevenue = () => {
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const amount = parseFloat(data.amount);
-
-      await localApi.suspendedRevenue.create({
+      const { error } = await supabase.from("suspended_revenue").insert({
         cashier_name: data.cashier_name,
         date: data.date,
         amount: amount,
@@ -50,6 +51,7 @@ const SuspendedRevenue = () => {
         department_id: departmentId,
         status: "pending",
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Suspended revenue recorded successfully");
@@ -74,12 +76,9 @@ const SuspendedRevenue = () => {
         status,
         resolved_at: status !== "pending" ? new Date().toISOString() : null,
       };
-
-      if (notes) {
-        updateData.investigation_notes = notes;
-      }
-
-      await localApi.suspendedRevenue.updateStatus(id, updateData);
+      if (notes) updateData.investigation_notes = notes;
+      const { error } = await supabase.from("suspended_revenue").update(updateData).eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Status updated successfully");

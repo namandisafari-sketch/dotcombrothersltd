@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,14 +27,15 @@ export function DepartmentManager() {
   const { data: departments } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
-      const data = await localApi.departments.getAll();
-      return data;
+      const { data } = await supabase.from("departments").select("*").order("name");
+      return data || [];
     },
   });
 
   const addDepartment = useMutation({
     mutationFn: async (dept: typeof formData) => {
-      await localApi.departments.create(dept);
+      const { error } = await supabase.from("departments").insert(dept);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments"] });
@@ -49,7 +50,8 @@ export function DepartmentManager() {
 
   const updateDepartment = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
-      await localApi.departments.update(id, data);
+      const { error } = await supabase.from("departments").update(data).eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments"] });
@@ -63,7 +65,8 @@ export function DepartmentManager() {
 
   const deleteDepartment = useMutation({
     mutationFn: async (id: string) => {
-      await localApi.departments.delete(id);
+      const { error } = await supabase.from("departments").delete().eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments"] });
@@ -137,11 +140,11 @@ export function DepartmentManager() {
                     <p className="text-sm text-muted-foreground mt-1">{dept.description}</p>
                   )}
                   <div className="flex items-center gap-2 mt-2">
-                    <p className="text-xs text-muted-foreground">
-                      Products: {dept.products?.[0]?.count || 0}
-                    </p>
                     {dept.is_mobile_money && (
                       <Badge variant="secondary" className="text-xs">Mobile Money</Badge>
+                    )}
+                    {dept.is_perfume_department && (
+                      <Badge variant="outline" className="text-xs">Perfume</Badge>
                     )}
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,30 +21,27 @@ export default function Inbox() {
   const { data: messages, isLoading } = useQuery({
     queryKey: ["inbox-messages", selectedDepartmentId, isAdmin],
     queryFn: async () => {
-      const data = await localApi.inbox.getAll({
-        department_id: selectedDepartmentId || undefined,
-        is_admin: isAdmin,
-      });
+      let query = supabase.from("interdepartmental_inbox").select("*, credits(amount, purpose, transaction_type, status, settlement_status)").order("created_at", { ascending: false });
+      if (!isAdmin && selectedDepartmentId) query = query.eq("to_department_id", selectedDepartmentId);
+      const { data } = await query;
       
-      // Transform to match expected format
-      return data.map((message: any) => ({
+      // Fetch department names
+      const { data: departments } = await supabase.from("departments").select("id, name");
+      const deptMap = Object.fromEntries((departments || []).map(d => [d.id, d.name]));
+      
+      return (data || []).map((message: any) => ({
         ...message,
-        from_department: { name: message.from_department_name },
-        to_department: { name: message.to_department_name },
-        credit: message.credit_amount ? {
-          amount: message.credit_amount,
-          purpose: message.credit_purpose,
-          transaction_type: message.credit_transaction_type,
-          status: message.credit_status,
-          settlement_status: message.credit_settlement_status,
-        } : null,
+        from_department: { name: deptMap[message.from_department_id] || "Unknown" },
+        to_department: { name: deptMap[message.to_department_id] || "Unknown" },
+        credit: message.credits,
       }));
     },
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: async (messageId: string) => {
-      await localApi.inbox.markAsRead(messageId);
+      const { error } = await supabase.from("interdepartmental_inbox").update({ is_read: true }).eq("id", messageId);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inbox-messages"] });

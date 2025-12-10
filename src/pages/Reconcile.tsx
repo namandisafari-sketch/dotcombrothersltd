@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,11 @@ const Reconcile = () => {
     queryKey: ["dailySales", formData.date, departmentId],
     queryFn: async () => {
       if (!departmentId) return { total: 0 };
-      return await localApi.sales.getDailySales(formData.date, departmentId);
+      const startOfDay = `${formData.date}T00:00:00`;
+      const endOfDay = `${formData.date}T23:59:59`;
+      const { data } = await supabase.from("sales").select("total").eq("department_id", departmentId).eq("status", "completed").eq("payment_method", "cash").gte("created_at", startOfDay).lte("created_at", endOfDay);
+      const total = (data || []).reduce((sum, s) => sum + Number(s.total || 0), 0);
+      return { total };
     },
     enabled: !!departmentId && !!formData.date,
   });
@@ -39,7 +43,8 @@ const Reconcile = () => {
     queryKey: ["reconciliations", departmentId],
     queryFn: async () => {
       if (!departmentId) return [];
-      return await localApi.reconciliations.getAll({ departmentId });
+      const { data } = await supabase.from("reconciliations").select("*").eq("department_id", departmentId).order("created_at", { ascending: false });
+      return data || [];
     },
     enabled: !!departmentId,
   });
@@ -48,18 +53,19 @@ const Reconcile = () => {
     mutationFn: async (data: typeof formData) => {
       const systemCash = dailySales || 0;
       const reportedCash = parseFloat(data.reported_cash);
-      const difference = reportedCash - systemCash;
+      const discrepancy = reportedCash - systemCash;
 
-      return await localApi.reconciliations.create({
+      const { error } = await supabase.from("reconciliations").insert({
         cashier_name: data.cashier_name,
         date: data.date,
         system_cash: systemCash,
         reported_cash: reportedCash,
-        difference: difference,
+        discrepancy: discrepancy,
         notes: data.notes,
         department_id: departmentId,
-        status: difference === 0 ? "approved" : "pending",
+        status: discrepancy === 0 ? "completed" : "pending",
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Reconciliation recorded successfully");
@@ -233,12 +239,12 @@ const Reconcile = () => {
                       <TableCell className="text-right">
                         <Badge
                           variant={
-                            Number(rec.difference) === 0
+                            Number(rec.discrepancy) === 0
                               ? "default"
                               : "destructive"
                           }
                         >
-                          {Number(rec.difference).toLocaleString()} UGX
+                          {Number(rec.discrepancy).toLocaleString()} UGX
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">

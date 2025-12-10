@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,8 +21,8 @@ const PerfumeRevenueReport = () => {
     queryKey: ["user-department-check", userDepartmentId],
     queryFn: async () => {
       if (!userDepartmentId) return null;
-      const departments = await localApi.departments.getAll();
-      return departments.find((d: any) => d.id === userDepartmentId && d.is_perfume_department);
+      const { data } = await supabase.from("departments").select("*").eq("id", userDepartmentId).eq("is_perfume_department", true).maybeSingle();
+      return data;
     },
     enabled: !!userDepartmentId && !isAdmin,
   });
@@ -50,10 +50,63 @@ const PerfumeRevenueReport = () => {
 
   const { data: revenueData, isLoading } = useQuery({
     queryKey: ["perfume-daily-revenue", today, departmentId],
-    queryFn: () => localApi.perfumeReports.getRevenueReport({
-      date: today,
-      departmentId: departmentId || undefined,
-    }),
+    queryFn: async () => {
+      const startOfDay = `${today}T00:00:00`;
+      const endOfDay = `${today}T23:59:59`;
+      
+      let salesQuery = supabase.from("sales").select("*, sale_items(*)").gte("created_at", startOfDay).lte("created_at", endOfDay).eq("status", "completed");
+      if (departmentId) salesQuery = salesQuery.eq("department_id", departmentId);
+      const { data: sales } = await salesQuery;
+
+      let expensesQuery = supabase.from("expenses").select("*").eq("expense_date", today);
+      if (departmentId) expensesQuery = expensesQuery.eq("department_id", departmentId);
+      const { data: expenses } = await expensesQuery;
+
+      let creditsQuery = supabase.from("credits").select("*").gte("created_at", startOfDay).lte("created_at", endOfDay);
+      if (departmentId) creditsQuery = creditsQuery.or(`from_department_id.eq.${departmentId},to_department_id.eq.${departmentId}`);
+      const { data: credits } = await creditsQuery;
+
+      let reconQuery = supabase.from("reconciliations").select("*").eq("date", today);
+      if (departmentId) reconQuery = reconQuery.eq("department_id", departmentId);
+      const { data: reconciliations } = await reconQuery;
+
+      let voidQuery = supabase.from("sales").select("*, sale_items(*)").eq("status", "voided").gte("voided_at", startOfDay).lte("voided_at", endOfDay);
+      if (departmentId) voidQuery = voidQuery.eq("department_id", departmentId);
+      const { data: voidedSales } = await voidQuery;
+
+      const retailSales = (sales || []).filter((s: any) => s.sale_items?.some((i: any) => i.customer_type === "retail"));
+      const wholesaleSales = (sales || []).filter((s: any) => s.sale_items?.some((i: any) => i.customer_type === "wholesale"));
+
+      const retailRevenue = retailSales.reduce((sum: number, s: any) => sum + Number(s.total || 0), 0);
+      const wholesaleRevenue = wholesaleSales.reduce((sum: number, s: any) => sum + Number(s.total || 0), 0);
+      const totalMlSold = (sales || []).reduce((sum: number, s: any) => sum + (s.sale_items?.reduce((iSum: number, i: any) => iSum + Number(i.ml_amount || 0), 0) || 0), 0);
+
+      const creditsOut = (credits || []).filter((c: any) => c.from_department_id === departmentId).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+      const creditsIn = (credits || []).filter((c: any) => c.to_department_id === departmentId).reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+
+      return {
+        totalRevenue: retailRevenue + wholesaleRevenue,
+        retailRevenue,
+        wholesaleRevenue,
+        retailCount: retailSales.length,
+        wholesaleCount: wholesaleSales.length,
+        totalMlSold,
+        retailSales,
+        wholesaleSales,
+        creditsOut,
+        creditsIn,
+        netCredits: creditsIn - creditsOut,
+        credits: credits || [],
+        expenses: expenses || [],
+        totalExpenses: (expenses || []).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0),
+        netRevenue: retailRevenue + wholesaleRevenue - (expenses || []).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0),
+        totalDifference: (reconciliations || []).reduce((sum: number, r: any) => sum + Number(r.discrepancy || 0), 0),
+        reconciliations: reconciliations || [],
+        totalVoidedAmount: (voidedSales || []).reduce((sum: number, s: any) => sum + Number(s.total || 0), 0),
+        voidedCount: (voidedSales || []).length,
+        voidedSales: voidedSales || [],
+      };
+    },
   });
 
   if (isLoading) {

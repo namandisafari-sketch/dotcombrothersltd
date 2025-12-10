@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,29 +22,23 @@ export default function ScentManager() {
   // Fetch custom scents from database
   const { data: customScents } = useQuery({
     queryKey: ["custom-scents"],
-    queryFn: () => localApi.perfumeScents.getAll(),
+    queryFn: async () => {
+      const { data } = await supabase.from("perfume_scents").select("*").order("name");
+      return data || [];
+    },
   });
 
   const addScentMutation = useMutation({
     mutationFn: async (scentName: string) => {
       const trimmedName = scentName.trim().toUpperCase();
       
-      if (!trimmedName) {
-        throw new Error("Scent name cannot be empty");
-      }
-
-      // Check if already exists in default list
-      if (PERFUME_SCENTS.includes(trimmedName)) {
-        throw new Error("This scent already exists in the default list");
-      }
-
-      // Check if already exists in custom list
+      if (!trimmedName) throw new Error("Scent name cannot be empty");
+      if (PERFUME_SCENTS.includes(trimmedName)) throw new Error("This scent already exists in the default list");
       const exists = customScents?.some(s => s.name.toUpperCase() === trimmedName);
-      if (exists) {
-        throw new Error("This scent already exists in custom scents");
-      }
+      if (exists) throw new Error("This scent already exists in custom scents");
 
-      return localApi.perfumeScents.create({ name: trimmedName });
+      const { error } = await supabase.from("perfume_scents").insert({ name: trimmedName });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Scent added successfully");
@@ -58,7 +52,10 @@ export default function ScentManager() {
   });
 
   const deleteScentMutation = useMutation({
-    mutationFn: (id: string) => localApi.perfumeScents.delete(id),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("perfume_scents").delete().eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       toast.success("Scent deleted successfully");
       queryClient.invalidateQueries({ queryKey: ["custom-scents"] });
@@ -69,20 +66,13 @@ export default function ScentManager() {
   });
 
   const toggleStockStatusMutation = useMutation({
-    mutationFn: ({ scentName, isOutOfStock, existingId }: { scentName: string; isOutOfStock: boolean; existingId?: string }) => {
+    mutationFn: async ({ scentName, isOutOfStock, existingId }: { scentName: string; isOutOfStock: boolean; existingId?: string }) => {
       if (existingId) {
-        // Update existing custom scent
-        return localApi.perfumeScents.update(existingId, {
-          is_out_of_stock: isOutOfStock,
-          flagged_by: isOutOfStock ? user?.id : null,
-        });
+        const { error } = await supabase.from("perfume_scents").update({ is_active: !isOutOfStock }).eq("id", existingId);
+        if (error) throw error;
       } else {
-        // Create new entry for default scent being flagged
-        return localApi.perfumeScents.create({
-          name: scentName,
-          is_out_of_stock: isOutOfStock,
-          flagged_by: isOutOfStock ? user?.id : null,
-        });
+        const { error } = await supabase.from("perfume_scents").insert({ name: scentName, is_active: !isOutOfStock });
+        if (error) throw error;
       }
     },
     onSuccess: (_, { isOutOfStock }) => {
@@ -140,7 +130,7 @@ export default function ScentManager() {
                 {filteredScents.map((scent) => {
                   const customScent = customScents?.find(s => s.name === scent);
                   const isCustom = !!customScent;
-                  const isOutOfStock = customScent?.is_out_of_stock || false;
+                  const isOutOfStock = customScent ? !customScent.is_active : false;
                   
                   return (
                     <Badge

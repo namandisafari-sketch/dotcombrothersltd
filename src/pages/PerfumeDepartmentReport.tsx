@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,8 +31,8 @@ const PerfumeDepartmentReport = () => {
     queryKey: ["user-department-check", userDepartmentId],
     queryFn: async () => {
       if (!userDepartmentId) return null;
-      const departments = await localApi.departments.getAll();
-      return departments.find((d: any) => d.id === userDepartmentId && d.is_perfume_department);
+      const { data } = await supabase.from("departments").select("*").eq("id", userDepartmentId).eq("is_perfume_department", true).maybeSingle();
+      return data;
     },
     enabled: !!userDepartmentId && !isAdmin,
   });
@@ -42,10 +42,70 @@ const PerfumeDepartmentReport = () => {
   // Fetch sales data with perfume-specific items
   const { data: salesData, isLoading: salesLoading } = useQuery({
     queryKey: ["perfume-sales-report", selectedDate, selectedDepartmentId],
-    queryFn: () => localApi.perfumeReports.getDepartmentReport({
-      date: selectedDate,
-      departmentId: selectedDepartmentId || undefined,
-    }),
+    queryFn: async () => {
+      const startOfDay = `${selectedDate}T00:00:00`;
+      const endOfDay = `${selectedDate}T23:59:59`;
+      const deptId = selectedDepartmentId || userDepartmentId;
+
+      let salesQuery = supabase.from("sales").select("*, sale_items(*)").gte("created_at", startOfDay).lte("created_at", endOfDay).eq("status", "completed");
+      if (deptId) salesQuery = salesQuery.eq("department_id", deptId);
+      const { data: sales } = await salesQuery;
+
+      let usageQuery = supabase.from("internal_stock_usage").select("*, products(name)").gte("created_at", startOfDay).lte("created_at", endOfDay);
+      if (deptId) usageQuery = usageQuery.eq("department_id", deptId);
+      const { data: internalUsage } = await usageQuery;
+
+      const retailSales = (sales || []).filter((s: any) => s.sale_items?.some((i: any) => i.customer_type === "retail"));
+      const wholesaleSales = (sales || []).filter((s: any) => s.sale_items?.some((i: any) => i.customer_type === "wholesale"));
+
+      const retailMl = retailSales.reduce((sum: number, s: any) => sum + (s.sale_items?.reduce((iSum: number, i: any) => iSum + Number(i.ml_amount || 0), 0) || 0), 0);
+      const wholesaleMl = wholesaleSales.reduce((sum: number, s: any) => sum + (s.sale_items?.reduce((iSum: number, i: any) => iSum + Number(i.ml_amount || 0), 0) || 0), 0);
+      const retailRevenue = retailSales.reduce((sum: number, s: any) => sum + Number(s.total || 0), 0);
+      const wholesaleRevenue = wholesaleSales.reduce((sum: number, s: any) => sum + Number(s.total || 0), 0);
+      const totalMl = retailMl + wholesaleMl;
+      const totalRevenue = retailRevenue + wholesaleRevenue;
+      const bottleCosts = (sales || []).reduce((sum: number, s: any) => sum + (s.sale_items?.reduce((iSum: number, i: any) => iSum + Number(i.bottle_cost || 0), 0) || 0), 0);
+
+      // Calculate top scents
+      const scentMap: Record<string, { ml: number; revenue: number }> = {};
+      (sales || []).forEach((s: any) => {
+        s.sale_items?.forEach((i: any) => {
+          if (i.scent_mixture) {
+            if (!scentMap[i.scent_mixture]) scentMap[i.scent_mixture] = { ml: 0, revenue: 0 };
+            scentMap[i.scent_mixture].ml += Number(i.ml_amount || 0);
+            scentMap[i.scent_mixture].revenue += Number(i.total || 0);
+          }
+        });
+      });
+      const topScents = Object.entries(scentMap).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.ml - a.ml).slice(0, 10);
+
+      // Split internal usage by reason
+      const sacrificedItems = (internalUsage || []).filter((u: any) => u.reason?.toLowerCase().includes("sacrifice") || u.reason?.toLowerCase().includes("wasted"));
+      const internalItems = (internalUsage || []).filter((u: any) => !u.reason?.toLowerCase().includes("sacrifice") && !u.reason?.toLowerCase().includes("wasted"));
+
+      return {
+        sales: sales || [],
+        internalUsage: internalUsage || [],
+        totalMl,
+        totalRevenue,
+        netRevenue: totalRevenue - bottleCosts,
+        bottleCosts,
+        totalBottleCosts: bottleCosts,
+        transactionCount: (sales || []).length,
+        totalTransactions: (sales || []).length,
+        retailTransactions: retailSales.length,
+        wholesaleTransactions: wholesaleSales.length,
+        retailMl,
+        wholesaleMl,
+        retailRevenue,
+        wholesaleRevenue,
+        topScents,
+        sacrificedItems,
+        internalItems,
+        totalSacrificed: sacrificedItems.reduce((sum: number, u: any) => sum + Number(u.ml_quantity || 0), 0),
+        totalInternal: internalItems.reduce((sum: number, u: any) => sum + Number(u.ml_quantity || 0), 0),
+      };
+    },
   });
 
   const internalUsage = salesData?.internalUsage;
@@ -249,17 +309,17 @@ const PerfumeDepartmentReport = () => {
               <CardContent>
                 {salesData?.topScents && salesData.topScents.length > 0 ? (
                   <div className="space-y-3">
-                    {salesData.topScents.map(([scent, count], index) => (
-                      <div key={scent} className="flex items-center justify-between">
+                    {salesData.topScents.map((scent: any, index: number) => (
+                      <div key={scent.name} className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Badge variant="outline" className="w-8 h-8 flex items-center justify-center">
                             {index + 1}
                           </Badge>
-                          <span className="font-medium">{scent}</span>
+                          <span className="font-medium">{scent.name}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Used</span>
-                          <Badge>{count}x</Badge>
+                          <span className="text-sm text-muted-foreground">{scent.ml} ml</span>
+                          <Badge>UGX {scent.revenue.toLocaleString()}</Badge>
                         </div>
                       </div>
                     ))}
@@ -285,12 +345,12 @@ const PerfumeDepartmentReport = () => {
                 <CardContent className="space-y-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Total Items Sacrificed</p>
-                    <p className="text-2xl font-bold">{internalUsage?.sacrificedItems || 0}</p>
+                    <p className="text-2xl font-bold">{salesData?.sacrificedItems?.length || 0}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Quantity</p>
                     <p className="text-xl font-semibold">
-                      {internalUsage?.totalSacrificed || 0} units
+                      {salesData?.totalSacrificed || 0} ml
                     </p>
                   </div>
                 </CardContent>
@@ -306,12 +366,12 @@ const PerfumeDepartmentReport = () => {
                 <CardContent className="space-y-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Total Items Used</p>
-                    <p className="text-2xl font-bold">{internalUsage?.internalItems || 0}</p>
+                    <p className="text-2xl font-bold">{salesData?.internalItems?.length || 0}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Quantity</p>
                     <p className="text-xl font-semibold">
-                      {internalUsage?.totalInternal || 0} units
+                      {salesData?.totalInternal || 0} ml
                     </p>
                   </div>
                 </CardContent>
