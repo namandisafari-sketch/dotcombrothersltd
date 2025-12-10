@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -18,31 +18,84 @@ const AdminCreditApproval = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   
-  // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
-  // Fetch departments for filter
   const { data: departments } = useQuery({
     queryKey: ["departments"],
-    queryFn: () => localApi.departments.getAll(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const { data: pendingCredits, isLoading } = useQuery({
     queryKey: ["pending-credits"],
-    queryFn: () => localApi.credits.getAll({ is_admin: true }),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("credits")
+        .select(`
+          *,
+          from_department:departments!credits_from_department_id_fkey(name),
+          to_department:departments!credits_to_department_id_fkey(name)
+        `)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const { data: allCredits, isLoading: isLoadingAll } = useQuery({
     queryKey: ["all-credits", statusFilter, departmentFilter, startDate, endDate],
-    queryFn: () => localApi.credits.getAll({ is_admin: true }),
+    queryFn: async () => {
+      let query = supabase
+        .from("credits")
+        .select(`
+          *,
+          from_department:departments!credits_from_department_id_fkey(name),
+          to_department:departments!credits_to_department_id_fkey(name)
+        `)
+        .order("created_at", { ascending: false });
+      
+      if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+      if (departmentFilter !== "all") {
+        query = query.or(`from_department_id.eq.${departmentFilter},to_department_id.eq.${departmentFilter}`);
+      }
+      if (startDate) {
+        query = query.gte("created_at", startDate);
+      }
+      if (endDate) {
+        query = query.lte("created_at", endDate);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const updateCreditStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "approved" | "rejected" }) => 
-      localApi.credits.updateStatus(id, status),
+    mutationFn: async ({ id, status }: { id: string; status: "approved" | "rejected" }) => {
+      const { error } = await supabase
+        .from("credits")
+        .update({ 
+          status: status as "approved" | "rejected" | "pending" | "partial" | "settled", 
+          approved_at: new Date().toISOString(),
+          approved_by: user?.id
+        })
+        .eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-credits"] });
       queryClient.invalidateQueries({ queryKey: ["all-credits"] });
@@ -64,7 +117,7 @@ const AdminCreditApproval = () => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ArrowRightLeft className="w-5 h-5" />
-            <span>UGX {credit.amount.toLocaleString()}</span>
+            <span>UGX {Number(credit.amount).toLocaleString()}</span>
           </div>
           <Badge variant={credit.status === "pending" ? "secondary" : credit.status === "approved" ? "default" : "destructive"}>
             {credit.status === "pending" && <Clock className="w-3 h-3 mr-1" />}
@@ -79,7 +132,7 @@ const AdminCreditApproval = () => {
           <div>
             <p className="text-sm text-muted-foreground">Transaction Type</p>
             <p className="font-medium capitalize">
-              {credit.transaction_type.replace(/_/g, " ")}
+              {credit.transaction_type?.replace(/_/g, " ") || "N/A"}
             </p>
           </div>
           <div>
@@ -94,20 +147,20 @@ const AdminCreditApproval = () => {
           <div>
             <p className="text-sm text-muted-foreground">From</p>
             <p className="font-medium">
-              {credit.from_department?.name || credit.from_person || "N/A"}
+              {credit.from_department?.name || "N/A"}
             </p>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">To</p>
             <p className="font-medium">
-              {credit.to_department?.name || credit.to_person || "N/A"}
+              {credit.to_department?.name || "N/A"}
             </p>
           </div>
         </div>
 
         <div>
           <p className="text-sm text-muted-foreground">Purpose</p>
-          <p className="font-medium">{credit.purpose}</p>
+          <p className="font-medium">{credit.purpose || "N/A"}</p>
         </div>
 
         {credit.notes && (
@@ -131,12 +184,7 @@ const AdminCreditApproval = () => {
         {showActions && (
           <div className="flex gap-2 pt-4 border-t">
             <Button
-              onClick={() =>
-                updateCreditStatusMutation.mutate({
-                  id: credit.id,
-                  status: "approved",
-                })
-              }
+              onClick={() => updateCreditStatusMutation.mutate({ id: credit.id, status: "approved" })}
               disabled={updateCreditStatusMutation.isPending}
               className="flex-1"
             >
@@ -145,12 +193,7 @@ const AdminCreditApproval = () => {
             </Button>
             <Button
               variant="destructive"
-              onClick={() =>
-                updateCreditStatusMutation.mutate({
-                  id: credit.id,
-                  status: "rejected",
-                })
-              }
+              onClick={() => updateCreditStatusMutation.mutate({ id: credit.id, status: "rejected" })}
               disabled={updateCreditStatusMutation.isPending}
               className="flex-1"
             >
@@ -191,16 +234,13 @@ const AdminCreditApproval = () => {
                 <CardContent className="flex flex-col items-center justify-center h-64 text-center">
                   <CheckCircle className="w-12 h-12 text-success mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Pending Credits</h3>
-                  <p className="text-muted-foreground">
-                    All credit requests have been reviewed
-                  </p>
+                  <p className="text-muted-foreground">All credit requests have been reviewed</p>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
           <TabsContent value="history" className="space-y-4 mt-6">
-            {/* Filters */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -213,9 +253,7 @@ const AdminCreditApproval = () => {
                   <div className="space-y-2">
                     <Label>Status</Label>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
                         <SelectItem value="pending">Pending</SelectItem>
@@ -224,52 +262,31 @@ const AdminCreditApproval = () => {
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div className="space-y-2">
                     <Label>Department</Label>
                     <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Departments</SelectItem>
                         {departments?.map((dept) => (
-                          <SelectItem key={dept.id} value={dept.id}>
-                            {dept.name}
-                          </SelectItem>
+                          <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div className="space-y-2">
                     <Label>Start Date</Label>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                    />
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                   </div>
-
                   <div className="space-y-2">
                     <Label>End Date</Label>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                    />
+                    <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                   </div>
                 </div>
-
                 {(statusFilter !== "all" || departmentFilter !== "all" || startDate || endDate) && (
                   <Button
                     variant="outline"
-                    onClick={() => {
-                      setStatusFilter("all");
-                      setDepartmentFilter("all");
-                      setStartDate("");
-                      setEndDate("");
-                    }}
+                    onClick={() => { setStatusFilter("all"); setDepartmentFilter("all"); setStartDate(""); setEndDate(""); }}
                     className="mt-4"
                   >
                     Clear Filters

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
 
 interface DepartmentContextType {
@@ -32,8 +32,13 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
   const { data: departments = [], isLoading } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
-      const data = await localApi.departments.getAll();
-      return data.filter((d: any) => !d.is_mobile_money && !d.is_perfume_department);
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data || []).filter((d: any) => !d.is_mobile_money && !d.is_perfume_department);
     },
   });
 
