@@ -8,7 +8,7 @@ import { DepartmentProvider } from "./contexts/DepartmentContext";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { DemoModeProvider } from "./contexts/DemoModeContext";
 import { OfflineSyncIndicator } from "./components/OfflineSyncIndicator";
-import { LocalBackendStatus } from "./components/LocalBackendStatus";
+
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { GettingStarted } from "./components/GettingStarted";
 import { DemoModeBanner } from "./components/DemoModeBanner";
@@ -124,7 +124,7 @@ const App = () => (
             <DemoModeProvider>
               <DepartmentProvider>
                 <OfflineSyncIndicator />
-                <LocalBackendStatus />
+                
                 <Routes>
                   <Route path="/" element={<LandingPage />} />
                   <Route path="/auth" element={<Auth />} />
