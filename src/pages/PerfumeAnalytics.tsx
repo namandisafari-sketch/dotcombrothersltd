@@ -129,19 +129,26 @@ export default function PerfumeAnalytics() {
   }
 
   return (
-    <div className="min-h-screen bg-background pt-32 lg:pt-20">
+    <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
       <Navigation />
-      <main className="container mx-auto p-4 md:p-6 space-y-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-primary" />
-            <h1 className="text-2xl md:text-3xl font-bold">Perfume Sales Analytics</h1>
+      <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Sparkles className="h-8 w-8 text-primary" />
+              Perfume Sales Analytics
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Comprehensive analytics for perfume sales
+            </p>
           </div>
           {isAdmin && (
-            <PerfumeDepartmentSelector 
-              value={selectedDepartmentId} 
-              onChange={setSelectedDepartmentId} 
-            />
+            <div className="min-w-[250px]">
+              <PerfumeDepartmentSelector 
+                value={selectedDepartmentId} 
+                onChange={setSelectedDepartmentId} 
+              />
+            </div>
           )}
         </div>
 

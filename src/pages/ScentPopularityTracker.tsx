@@ -103,18 +103,27 @@ export default function ScentPopularityTracker() {
   const totalMl = scentData?.reduce((sum, item) => sum + item.totalMl, 0) || 0;
 
   return (
-    <div className="min-h-screen bg-background pt-32 lg:pt-20">
+    <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
       <Navigation />
-      <main className="container mx-auto p-4 md:p-6 space-y-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-primary" />
-            <h1 className="text-2xl md:text-3xl font-bold">Scent Popularity Tracker</h1>
+      <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Sparkles className="h-8 w-8 text-primary" />
+              Scent Popularity Tracker
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Track which scents are most popular
+            </p>
           </div>
-          <PerfumeDepartmentSelector 
-            value={selectedDepartmentId} 
-            onChange={setSelectedDepartmentId} 
-          />
+          {isAdmin && (
+            <div className="min-w-[250px]">
+              <PerfumeDepartmentSelector 
+                value={selectedDepartmentId} 
+                onChange={setSelectedDepartmentId} 
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

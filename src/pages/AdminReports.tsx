@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate } from "react-router-dom";
-import { DollarSign, TrendingUp, TrendingDown, FileText, ArrowUpRight, ArrowDownRight, Minus, Building2 } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, FileText, Building2, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
@@ -209,12 +210,16 @@ const AdminReports = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 lg:p-8">
-      <main className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
+      <Navigation />
+      <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
         <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold">Financial Reports</h2>
-            <p className="text-sm sm:text-base text-muted-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <FileText className="h-8 w-8 text-primary" />
+              Financial Reports
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground mt-1">
               Standard financial statements for {dateRange.label}
             </p>
           </div>

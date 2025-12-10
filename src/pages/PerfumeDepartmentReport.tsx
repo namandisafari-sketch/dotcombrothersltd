@@ -175,21 +175,28 @@ const PerfumeDepartmentReport = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
       <Navigation />
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-8 space-y-6">
-        <div className="flex items-center justify-between">
+      <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Perfume Department Report</h1>
-            <p className="text-muted-foreground">
-            ML-based sales tracking with scent analytics
-          </p>
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Droplet className="h-8 w-8 text-primary" />
+              Perfume Department Report
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              ML-based sales tracking with scent analytics
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="min-w-[250px]">
+              <PerfumeDepartmentSelector 
+                value={selectedDepartmentId} 
+                onChange={setSelectedDepartmentId} 
+              />
+            </div>
+          )}
         </div>
-        <PerfumeDepartmentSelector 
-          value={selectedDepartmentId} 
-          onChange={setSelectedDepartmentId} 
-        />
-      </div>
 
         <div className="flex gap-4 items-center">
           <input

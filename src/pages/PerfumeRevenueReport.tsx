@@ -184,10 +184,10 @@ const PerfumeRevenueReport = () => {
     <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
       <Navigation />
 
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
+      <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
               <DollarSign className="h-8 w-8 text-primary" />
               Perfume Revenue Report
             </h1>
