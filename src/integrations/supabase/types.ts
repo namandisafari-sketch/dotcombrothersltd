@@ -769,21 +769,26 @@ export type Database = {
           cost_per_ml: number | null
           cost_price: number | null
           created_at: string | null
+          current_stock: number | null
           department_id: string | null
           description: string | null
           id: string
           image_url: string | null
           imei: string | null
+          internal_barcode: string | null
           is_active: boolean | null
+          is_archived: boolean | null
           is_bundle: boolean | null
           max_price: number | null
           min_price: number | null
           min_stock: number | null
           name: string
           price: number
+          pricing_tiers: Json | null
           quantity_per_unit: number | null
           retail_price: number | null
           retail_price_per_ml: number | null
+          selling_price: number | null
           serial_number: string | null
           sku: string | null
           stock: number | null
@@ -806,21 +811,26 @@ export type Database = {
           cost_per_ml?: number | null
           cost_price?: number | null
           created_at?: string | null
+          current_stock?: number | null
           department_id?: string | null
           description?: string | null
           id?: string
           image_url?: string | null
           imei?: string | null
+          internal_barcode?: string | null
           is_active?: boolean | null
+          is_archived?: boolean | null
           is_bundle?: boolean | null
           max_price?: number | null
           min_price?: number | null
           min_stock?: number | null
           name: string
           price?: number
+          pricing_tiers?: Json | null
           quantity_per_unit?: number | null
           retail_price?: number | null
           retail_price_per_ml?: number | null
+          selling_price?: number | null
           serial_number?: string | null
           sku?: string | null
           stock?: number | null
@@ -843,21 +853,26 @@ export type Database = {
           cost_per_ml?: number | null
           cost_price?: number | null
           created_at?: string | null
+          current_stock?: number | null
           department_id?: string | null
           description?: string | null
           id?: string
           image_url?: string | null
           imei?: string | null
+          internal_barcode?: string | null
           is_active?: boolean | null
+          is_archived?: boolean | null
           is_bundle?: boolean | null
           max_price?: number | null
           min_price?: number | null
           min_stock?: number | null
           name?: string
           price?: number
+          pricing_tiers?: Json | null
           quantity_per_unit?: number | null
           retail_price?: number | null
           retail_price_per_ml?: number | null
+          selling_price?: number | null
           serial_number?: string | null
           sku?: string | null
           stock?: number | null
@@ -973,6 +988,7 @@ export type Database = {
       }
       sale_items: {
         Row: {
+          bottle_cost: number | null
           created_at: string | null
           customer_type: string | null
           id: string
@@ -990,6 +1006,7 @@ export type Database = {
           variant_id: string | null
         }
         Insert: {
+          bottle_cost?: number | null
           created_at?: string | null
           customer_type?: string | null
           id?: string
@@ -1007,6 +1024,7 @@ export type Database = {
           variant_id?: string | null
         }
         Update: {
+          bottle_cost?: number | null
           created_at?: string | null
           customer_type?: string | null
           id?: string
@@ -1059,11 +1077,14 @@ export type Database = {
           amount_paid: number | null
           cashier_id: string | null
           cashier_name: string | null
+          change_amount: number | null
           created_at: string | null
           customer_id: string | null
           department_id: string | null
           discount: number | null
           id: string
+          invoice_number: string | null
+          is_invoice: boolean | null
           is_loan: boolean | null
           notes: string | null
           payment_method: Database["public"]["Enums"]["payment_method"] | null
@@ -1082,11 +1103,14 @@ export type Database = {
           amount_paid?: number | null
           cashier_id?: string | null
           cashier_name?: string | null
+          change_amount?: number | null
           created_at?: string | null
           customer_id?: string | null
           department_id?: string | null
           discount?: number | null
           id?: string
+          invoice_number?: string | null
+          is_invoice?: boolean | null
           is_loan?: boolean | null
           notes?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
@@ -1105,11 +1129,14 @@ export type Database = {
           amount_paid?: number | null
           cashier_id?: string | null
           cashier_name?: string | null
+          change_amount?: number | null
           created_at?: string | null
           customer_id?: string | null
           department_id?: string | null
           discount?: number | null
           id?: string
+          invoice_number?: string | null
+          is_invoice?: boolean | null
           is_loan?: boolean | null
           notes?: string | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
@@ -1476,6 +1503,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_receipt_number: { Args: never; Returns: string }
+      get_or_create_master_perfume: { Args: never; Returns: string }
       get_user_department: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

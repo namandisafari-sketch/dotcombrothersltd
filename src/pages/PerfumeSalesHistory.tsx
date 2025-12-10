@@ -123,7 +123,7 @@ const PerfumeSalesHistory = () => {
     let settings = null;
     if (sale.department_id) {
       const { data: deptSettings } = await supabase
-        .from("settings")
+        .from("department_settings")
         .select("*")
         .eq("department_id", sale.department_id)
         .maybeSingle();
@@ -138,13 +138,29 @@ const PerfumeSalesHistory = () => {
       settings = globalSettings;
     }
 
+    // Fetch customer data if available
+    let customerName = "Walk-in Customer";
+    let customerPhone = undefined;
+    if (sale.customer_id) {
+      const { data: customer } = await supabase
+        .from("customers")
+        .select("name, phone")
+        .eq("id", sale.customer_id)
+        .maybeSingle();
+      
+      if (customer) {
+        customerName = customer.name;
+        customerPhone = customer.phone;
+      }
+    }
+
     const receiptData = {
       receiptNumber: sale.receipt_number,
       items: sale.sale_items.map((item: any) => ({
         name: item.item_name,
         quantity: item.quantity,
         price: item.unit_price,
-        subtotal: item.subtotal,
+        subtotal: item.total,
       })),
       subtotal: sale.subtotal,
       tax: 0,
@@ -158,7 +174,8 @@ const PerfumeSalesHistory = () => {
         minute: "2-digit",
       }),
       cashierName: sale.cashier_name || "Staff",
-      customerName: "Walk-in Customer",
+      customerName,
+      customerPhone,
       businessInfo: {
         name: settings?.business_name || "DOTCOM BROTHERS LTD",
         address: settings?.business_address || "Kasangati opp Kasangati Police Station",
@@ -395,7 +412,7 @@ const PerfumeSalesHistory = () => {
                           </div>
                         </div>
                         <div className="font-medium">
-                          UGX {item.subtotal?.toLocaleString()}
+                          UGX {item.total?.toLocaleString()}
                         </div>
                       </div>
                     ))}
