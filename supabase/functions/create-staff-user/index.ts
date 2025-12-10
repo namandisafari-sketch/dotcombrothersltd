@@ -88,14 +88,13 @@ Deno.serve(async (req) => {
       console.error('Role deletion error:', deleteError);
     }
 
-    // Use upsert to prevent duplicate key errors
+    // Insert new role (we deleted existing ones above)
     const { error: roleError } = await supabaseClient
       .from('user_roles')
-      .upsert({
+      .insert({
         user_id: authData.user.id,
         role: role,
-      }, {
-        onConflict: 'user_id,role'
+        department_id: departmentId || null,
       });
 
     if (roleError) {
