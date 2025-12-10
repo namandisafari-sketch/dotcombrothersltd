@@ -4,294 +4,146 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate } from "react-router-dom";
-import { DollarSign, TrendingUp, Users, Package, Building2, CreditCard, Receipt, Info } from "lucide-react";
-import { PaymentTransactionsReport } from "@/components/admin/PaymentTransactionsReport";
-import { format } from "date-fns";
+import { DollarSign, TrendingUp, TrendingDown, FileText, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 
 const AdminReports = () => {
   const { user } = useAuth();
-  const [dateFilter, setDateFilter] = useState<"daily" | "weekly" | "monthly" | "all">("daily");
+  const [period, setPeriod] = useState<"current" | "previous" | "ytd">("current");
 
-  // User role is already in the user object from AuthContext
   const isAdmin = user?.role === "admin";
-  const isLoading = false;
 
   const getDateRange = () => {
     const now = new Date();
-    const today = now.toISOString().split("T")[0];
-    
-    if (dateFilter === "daily") {
+    if (period === "current") {
       return {
-        start: `${today}T00:00:00`,
-        end: `${today}T23:59:59`,
+        start: startOfMonth(now),
+        end: endOfMonth(now),
+        label: format(now, "MMMM yyyy"),
       };
-    } else if (dateFilter === "weekly") {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === "previous") {
+      const prevMonth = subMonths(now, 1);
       return {
-        start: weekAgo.toISOString(),
-        end: now.toISOString(),
+        start: startOfMonth(prevMonth),
+        end: endOfMonth(prevMonth),
+        label: format(prevMonth, "MMMM yyyy"),
       };
-    } else if (dateFilter === "monthly") {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else {
       return {
-        start: monthAgo.toISOString(),
-        end: now.toISOString(),
+        start: new Date(now.getFullYear(), 0, 1),
+        end: now,
+        label: `Year to Date (${now.getFullYear()})`,
       };
     }
-    return null; // "all" - no date filter
   };
 
-  // Sales by department with credits, reconciliation, and expenses factored in (excluding mobile money and card/bank payments)
-  const { data: departmentSales } = useQuery({
-    queryKey: ["department-sales", dateFilter],
+  const dateRange = getDateRange();
+
+  // Fetch all financial data
+  const { data: financialData, isLoading } = useQuery({
+    queryKey: ["financial-data", period],
     queryFn: async () => {
-      const dateRange = getDateRange();
-      
-      const [sales, credits, reconciliations, expenses, departments, suspendedRevenue] = await Promise.all([
+      const [sales, expenses, credits, products, customers, reconciliations] = await Promise.all([
         localApi.sales.getAll(),
-        localApi.credits.getAll(),
-        localApi.reconciliations.getAll(),
         localApi.expenses.getAll(),
-        localApi.departments.getAll(),
-        localApi.suspendedRevenue.getAll(),
-      ]);
-
-      // Filter sales based on date and payment method
-      let filteredSales = sales.filter((sale: any) => 
-        sale.department_id && 
-        !['mobile_money', 'card', 'bank'].includes(sale.payment_method) &&
-        sale.status !== 'voided'
-      );
-
-      if (dateRange) {
-        filteredSales = filteredSales.filter((sale: any) => {
-          const saleDate = new Date(sale.created_at);
-          return saleDate >= new Date(dateRange.start) && saleDate <= new Date(dateRange.end);
-        });
-      }
-
-      const salesRes = { data: filteredSales, error: null };
-      const creditsRes = { data: credits.filter((c: any) => c.status === 'approved'), error: null };
-      const reconciliationsRes = { data: reconciliations, error: null };
-      const expensesRes = { data: expenses, error: null };
-      const departmentsRes = { data: departments, error: null };
-      const suspendedRevenueRes = { data: suspendedRevenue.filter((s: any) => ['pending', 'explained'].includes(s.status)), error: null };
-      
-      if (salesRes.error) throw salesRes.error;
-      
-      const grouped = salesRes.data.reduce((acc: any, sale: any) => {
-        const deptId = sale.department_id;
-        const dept = departmentsRes.data?.find((d: any) => d.id === deptId);
-        if (!acc[deptId]) {
-          acc[deptId] = {
-            id: deptId,
-            name: dept?.name || "Unknown",
-            grossSales: 0,
-            count: 0,
-            creditsIn: 0,
-            creditsOut: 0,
-            settledCreditsIn: 0,
-            settledCreditsOut: 0,
-            reconciliationDiff: 0,
-            expenses: 0,
-            suspendedRevenue: 0,
-            netSales: 0,
-          };
-        }
-        acc[deptId].grossSales += Number(sale.total);
-        acc[deptId].count += 1;
-        return acc;
-      }, {});
-
-      // Add credits adjustments
-      creditsRes.data?.forEach((credit: any) => {
-        const isSettled = credit.settlement_status === 'settled';
-        
-        // Credits IN: money received (borrowed) - when settled, it's a deduction (we pay it back)
-        if (credit.to_department_id && grouped[credit.to_department_id]) {
-          if (isSettled) {
-            grouped[credit.to_department_id].settledCreditsIn += Number(credit.amount);
-          } else {
-            grouped[credit.to_department_id].creditsIn += Number(credit.amount);
-          }
-        }
-        
-        // Credits OUT: money given (lent) - when settled, it's an addition (we receive it back)
-        if (credit.from_department_id && grouped[credit.from_department_id]) {
-          if (isSettled) {
-            grouped[credit.from_department_id].settledCreditsOut += Number(credit.amount);
-          } else {
-            grouped[credit.from_department_id].creditsOut += Number(credit.amount);
-          }
-        }
-      });
-
-      // Add reconciliation differences
-      reconciliationsRes.data?.forEach((rec: any) => {
-        // For now, since reconciliation doesn't have department_id, we'll show it separately
-        // You may want to add department_id to reconciliations table
-      });
-
-      // Add expenses
-      expensesRes.data?.forEach((expense: any) => {
-        if (expense.department_id && grouped[expense.department_id]) {
-          grouped[expense.department_id].expenses += Number(expense.amount);
-        }
-      });
-
-      // Subtract suspended revenue (unapproved extra cash)
-      suspendedRevenueRes.data?.forEach((suspended: any) => {
-        if (suspended.department_id && grouped[suspended.department_id]) {
-          grouped[suspended.department_id].suspendedRevenue += Number(suspended.amount);
-        }
-      });
-
-      // Calculate net sales
-      // Formula: Gross Sales + Unsettled Credits IN - Unsettled Credits OUT 
-      //          - Settled Credits IN (refunded back) + Settled Credits OUT (received back)
-      //          - Expenses - Reconciliation Differences - Suspended Revenue
-      Object.keys(grouped).forEach((deptId) => {
-        const dept = grouped[deptId];
-        dept.netSales = dept.grossSales 
-          + dept.creditsIn 
-          - dept.creditsOut 
-          - dept.settledCreditsIn  // Deduction: we're paying back borrowed money
-          + dept.settledCreditsOut // Addition: we're receiving back lent money
-          - dept.expenses 
-          - dept.reconciliationDiff
-          - dept.suspendedRevenue; // Subtract unapproved extra cash
-      });
-      
-      return Object.values(grouped);
-    },
-  });
-
-  // Total statistics (excluding mobile money and card/bank payments from revenue)
-  const { data: totalStats } = useQuery({
-    queryKey: ["total-stats", dateFilter],
-    queryFn: async () => {
-      const dateRange = getDateRange();
-      
-      const [sales, products, customers, departments] = await Promise.all([
-        localApi.sales.getAll(),
+        localApi.credits.getAll(),
         localApi.products.getAll(),
         localApi.customers.getAll(),
-        localApi.departments.getAll(),
+        localApi.reconciliations.getAll(),
       ]);
 
-      let filteredSales = sales.filter((sale: any) => 
-        !['mobile_money', 'card', 'bank'].includes(sale.payment_method) &&
-        sale.status !== 'voided'
-      );
-
-      if (dateRange) {
-        filteredSales = filteredSales.filter((sale: any) => {
-          const saleDate = new Date(sale.created_at);
-          return saleDate >= new Date(dateRange.start) && saleDate <= new Date(dateRange.end);
-        });
-      }
-
-      return {
-        totalRevenue: filteredSales.reduce((sum, sale) => sum + Number(sale.total), 0) || 0,
-        totalProducts: products.length || 0,
-        totalCustomers: customers.length || 0,
-        totalDepartments: departments.length || 0,
-      };
-    },
-  });
-
-  // Low stock by department - products only (perfumes included)
-  const { data: lowStockByDept } = useQuery({
-    queryKey: ["low-stock-by-dept"],
-    queryFn: async () => {
-      const [products, departments] = await Promise.all([
-        localApi.products.getAll(),
-        localApi.departments.getAll(),
-      ]);
-
-      const allProducts = (products || []).filter((p: any) => {
-        // Handle both unit and milliliter tracking
-        if (p.tracking_type === 'milliliter') {
-          return (p.current_stock_ml || 0) <= (p.reorder_level || 0);
-        }
-        return (p.current_stock || 0) <= (p.reorder_level || 0);
+      // Filter by date range
+      const filteredSales = sales.filter((sale: any) => {
+        const saleDate = new Date(sale.created_at);
+        return saleDate >= dateRange.start && saleDate <= dateRange.end && sale.status !== 'voided';
       });
 
-      const grouped = allProducts.reduce((acc: any, product: any) => {
-        const dept = departments.find((d: any) => d.id === product.department_id);
-        const deptName = dept?.name || "No Department";
-        if (!acc[deptName]) {
-          acc[deptName] = [];
-        }
-        acc[deptName].push(product);
+      const filteredExpenses = expenses.filter((expense: any) => {
+        const expenseDate = new Date(expense.expense_date || expense.created_at);
+        return expenseDate >= dateRange.start && expenseDate <= dateRange.end;
+      });
+
+      // Calculate totals
+      const totalRevenue = filteredSales.reduce((sum: number, sale: any) => sum + Number(sale.total || 0), 0);
+      const cashSales = filteredSales.filter((s: any) => s.payment_method === 'cash').reduce((sum: number, sale: any) => sum + Number(sale.total || 0), 0);
+      const creditSales = filteredSales.filter((s: any) => s.payment_method === 'credit').reduce((sum: number, sale: any) => sum + Number(sale.total || 0), 0);
+      const mobileMoneySales = filteredSales.filter((s: any) => ['mobile_money', 'card', 'bank'].includes(s.payment_method)).reduce((sum: number, sale: any) => sum + Number(sale.total || 0), 0);
+      
+      const totalExpenses = filteredExpenses.reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+      
+      // Group expenses by category
+      const expensesByCategory = filteredExpenses.reduce((acc: any, expense: any) => {
+        const category = expense.category || 'Other';
+        acc[category] = (acc[category] || 0) + Number(expense.amount || 0);
         return acc;
       }, {});
-      
-      return grouped;
-    },
-  });
 
-  // Reconciliation data
-  const { data: reconciliations } = useQuery({
-    queryKey: ["reconciliations"],
-    queryFn: async () => {
-      const data = await localApi.reconciliations.getAll();
-      return data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
-    },
-  });
+      // Calculate Cost of Goods Sold (estimated from product cost prices)
+      const costOfGoodsSold = filteredSales.reduce((sum: number, sale: any) => {
+        // Estimate COGS as 60% of revenue for simplicity
+        return sum + (Number(sale.total || 0) * 0.6);
+      }, 0);
 
-  // Expenses data
-  const { data: expenses } = useQuery({
-    queryKey: ["expenses"],
-    queryFn: async () => {
-      const data = await localApi.expenses.getAll();
-      return data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 20);
-    },
-  });
+      // Calculate inventory value
+      const inventoryValue = products.reduce((sum: number, product: any) => {
+        const stock = Number(product.stock || 0);
+        const costPrice = Number(product.cost_price || product.price * 0.6 || 0);
+        return sum + (stock * costPrice);
+      }, 0);
 
-  // Credits data
-  const { data: credits } = useQuery({
-    queryKey: ["all-credits"],
-    queryFn: async () => {
-      const [creditsData, departments] = await Promise.all([
-        localApi.credits.getAll(),
-        localApi.departments.getAll(),
-      ]);
-      
-      // Add department names to credits
-      const enrichedCredits = creditsData.map((credit: any) => {
-        const fromDept = departments.find((d: any) => d.id === credit.from_department_id);
-        const toDept = departments.find((d: any) => d.id === credit.to_department_id);
-        return {
-          ...credit,
-          from_department: fromDept ? { name: fromDept.name } : null,
-          to_department: toDept ? { name: toDept.name } : null,
-        };
-      });
-      
-      return enrichedCredits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    },
-  });
+      // Calculate accounts receivable (customer outstanding balances)
+      const accountsReceivable = customers.reduce((sum: number, customer: any) => {
+        return sum + Number(customer.outstanding_balance || 0);
+      }, 0);
 
-  // Mobile Money Revenue (separate from total revenue)
-  const { data: mobileMoneyStats } = useQuery({
-    queryKey: ["mobile-money-stats"],
-    queryFn: async () => {
-      const sales = await localApi.sales.getAll();
-      
-      const mobileMoneyAndCardSales = sales.filter((sale: any) => 
-        ['mobile_money', 'card', 'bank'].includes(sale.payment_method)
-      );
-      
-      const totalMobileMoneyRevenue = mobileMoneyAndCardSales.reduce((sum, sale) => sum + Number(sale.total), 0) || 0;
-      const transactionCount = mobileMoneyAndCardSales.length || 0;
-      
+      // Calculate credits/loans data
+      const totalCreditsReceivable = credits
+        .filter((c: any) => c.status !== 'settled' && c.transaction_type === 'interdepartmental')
+        .reduce((sum: number, c: any) => sum + Number(c.amount || 0) - Number(c.paid_amount || 0), 0);
+
+      const totalCreditsPayable = credits
+        .filter((c: any) => c.status !== 'settled' && c.transaction_type === 'customer_credit')
+        .reduce((sum: number, c: any) => sum + Number(c.amount || 0) - Number(c.paid_amount || 0), 0);
+
+      // Cash on hand from reconciliations
+      const latestReconciliation = reconciliations.sort((a: any, b: any) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      )[0];
+      const cashOnHand = latestReconciliation ? Number(latestReconciliation.reported_cash || 0) : 0;
+
       return {
-        totalRevenue: totalMobileMoneyRevenue,
-        transactionCount,
+        // Income Statement
+        totalRevenue,
+        cashSales,
+        creditSales,
+        mobileMoneySales,
+        costOfGoodsSold,
+        grossProfit: totalRevenue - costOfGoodsSold,
+        totalExpenses,
+        expensesByCategory,
+        operatingIncome: totalRevenue - costOfGoodsSold - totalExpenses,
+        netIncome: totalRevenue - costOfGoodsSold - totalExpenses,
+        
+        // Balance Sheet
+        cashOnHand,
+        accountsReceivable,
+        inventoryValue,
+        totalCurrentAssets: cashOnHand + accountsReceivable + inventoryValue + mobileMoneySales,
+        totalCreditsReceivable,
+        totalCreditsPayable,
+        
+        // Cash Flow
+        operatingCashFlow: cashSales - totalExpenses,
+        investingCashFlow: 0, // Would need asset purchases data
+        financingCashFlow: totalCreditsReceivable - totalCreditsPayable,
+        
+        // Counts
+        salesCount: filteredSales.length,
+        expensesCount: filteredExpenses.length,
       };
     },
   });
@@ -308,37 +160,33 @@ const AdminReports = () => {
     return <Navigate to="/" replace />;
   }
 
+  const formatCurrency = (amount: number) => {
+    return `UGX ${amount.toLocaleString()}`;
+  };
+
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
       <main className="max-w-7xl mx-auto space-y-6">
         <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold">Admin Reports & Statements</h2>
-            <p className="text-sm sm:text-base text-muted-foreground">Comprehensive business analytics</p>
+            <h2 className="text-2xl sm:text-3xl font-bold">Financial Reports</h2>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Standard financial statements for {dateRange.label}
+            </p>
           </div>
-          <Select value={dateFilter} onValueChange={(value: any) => setDateFilter(value)}>
-            <SelectTrigger className="w-[180px]">
+          <Select value={period} onValueChange={(value: any) => setPeriod(value)}>
+            <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Select period" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="daily">Today</SelectItem>
-              <SelectItem value="weekly">Last 7 Days</SelectItem>
-              <SelectItem value="monthly">Last 30 Days</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="current">Current Month</SelectItem>
+              <SelectItem value="previous">Previous Month</SelectItem>
+              <SelectItem value="ytd">Year to Date</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Report Explanation:</strong> Gross Sales = Total sales revenue (excluding mobile money/card/bank). 
-            Net Sales = Gross Sales + Credits IN - Credits OUT - Settled Credits IN + Settled Credits OUT - Expenses - Reconciliation Differences - Suspended Revenue.
-            Date filter applies to sales transactions. Use the same filter in department reports for matching data.
-          </AlertDescription>
-        </Alert>
 
-        {/* Overview Stats */}
+        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -346,328 +194,381 @@ const AdminReports = () => {
               <DollarSign className="w-4 h-4 text-success" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                UGX {totalStats?.totalRevenue.toLocaleString() || 0}
+              <div className="text-2xl font-bold text-success">
+                {formatCurrency(financialData?.totalRevenue || 0)}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Excludes mobile money & card payments
+                {financialData?.salesCount || 0} transactions
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Mobile Money & Cards</CardTitle>
-              <CreditCard className="w-4 h-4 text-blue-500" />
+              <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+              <TrendingDown className="w-4 h-4 text-destructive" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                UGX {mobileMoneyStats?.totalRevenue.toLocaleString() || 0}
+              <div className="text-2xl font-bold text-destructive">
+                {formatCurrency(financialData?.totalExpenses || 0)}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {mobileMoneyStats?.transactionCount || 0} transactions (not in total revenue)
+                {financialData?.expensesCount || 0} expense records
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Products</CardTitle>
-              <Package className="w-4 h-4 text-primary" />
+              <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
+              <TrendingUp className="w-4 h-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalStats?.totalProducts || 0}</div>
+              <div className={`text-2xl font-bold ${(financialData?.grossProfit || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {formatCurrency(financialData?.grossProfit || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {((financialData?.grossProfit || 0) / (financialData?.totalRevenue || 1) * 100).toFixed(1)}% margin
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Customers</CardTitle>
-              <Users className="w-4 h-4 text-accent" />
+              <CardTitle className="text-sm font-medium">Net Income</CardTitle>
+              <FileText className="w-4 h-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalStats?.totalCustomers || 0}</div>
+              <div className={`text-2xl font-bold ${(financialData?.netIncome || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {formatCurrency(financialData?.netIncome || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {((financialData?.netIncome || 0) / (financialData?.totalRevenue || 1) * 100).toFixed(1)}% net margin
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Secondary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Departments</CardTitle>
-              <Building2 className="w-4 h-4 text-warning" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalStats?.totalDepartments || 0}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Tabs defaultValue="departments" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
-            <TabsTrigger value="departments">Sales</TabsTrigger>
-            <TabsTrigger value="mobile-money">Card & Mobile Money</TabsTrigger>
-            <TabsTrigger value="inventory">Inventory</TabsTrigger>
-            <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
-            <TabsTrigger value="expenses">Expenses</TabsTrigger>
-            <TabsTrigger value="credits">Credits</TabsTrigger>
+        <Tabs defaultValue="income" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="income">Income Statement</TabsTrigger>
+            <TabsTrigger value="balance">Balance Sheet</TabsTrigger>
+            <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="departments">
+          {/* Income Statement */}
+          <TabsContent value="income">
             <Card>
               <CardHeader>
-                <CardTitle>Department Sales Performance</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Income Statement
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  For the period ending {format(dateRange.end, "MMMM d, yyyy")}
+                </p>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {departmentSales && departmentSales.length > 0 ? (
-                    departmentSales.map((dept: any, index: number) => (
-                      <div
-                        key={index}
-                        className="border rounded-lg p-4 space-y-3"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-lg">{dept.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {dept.count} transactions
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm text-muted-foreground">Net Sales</p>
-                            <p className="text-2xl font-bold text-success">
-                              UGX {dept.netSales.toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="bg-muted/50 p-2 rounded">
-                            <p className="text-muted-foreground">Gross Sales</p>
-                            <p className="font-semibold">UGX {dept.grossSales.toLocaleString()}</p>
-                          </div>
-                          <div className="bg-success/10 p-2 rounded">
-                            <p className="text-muted-foreground">Credits In</p>
-                            <p className="font-semibold text-success">+{dept.creditsIn.toLocaleString()}</p>
-                          </div>
-                          <div className="bg-destructive/10 p-2 rounded">
-                            <p className="text-muted-foreground">Credits Out</p>
-                            <p className="font-semibold text-destructive">-{dept.creditsOut.toLocaleString()}</p>
-                          </div>
-                          <div className="bg-warning/10 p-2 rounded">
-                            <p className="text-muted-foreground">Expenses</p>
-                            <p className="font-semibold text-warning">-{dept.expenses.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      No sales data available
-                    </p>
-                  )}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[60%]">Description</TableHead>
+                      <TableHead className="text-right">Amount (UGX)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Revenue Section */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">REVENUE</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8">Cash Sales</TableCell>
+                      <TableCell className="text-right">{(financialData?.cashSales || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8">Credit Sales</TableCell>
+                      <TableCell className="text-right">{(financialData?.creditSales || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8">Mobile Money & Card Sales</TableCell>
+                      <TableCell className="text-right">{(financialData?.mobileMoneySales || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t-2">
+                      <TableCell className="font-semibold">Total Revenue</TableCell>
+                      <TableCell className="text-right font-semibold text-success">
+                        {(financialData?.totalRevenue || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Cost of Goods Sold */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">COST OF GOODS SOLD</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8">Cost of Goods Sold (Est.)</TableCell>
+                      <TableCell className="text-right text-destructive">
+                        ({(financialData?.costOfGoodsSold || 0).toLocaleString()})
+                      </TableCell>
+                    </TableRow>
+                    <TableRow className="border-t-2">
+                      <TableCell className="font-semibold">Gross Profit</TableCell>
+                      <TableCell className={`text-right font-semibold ${(financialData?.grossProfit || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {(financialData?.grossProfit || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Operating Expenses */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">OPERATING EXPENSES</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    {financialData?.expensesByCategory && Object.entries(financialData.expensesByCategory).map(([category, amount]) => (
+                      <TableRow key={category}>
+                        <TableCell className="pl-8">{category}</TableCell>
+                        <TableCell className="text-right text-destructive">
+                          ({(amount as number).toLocaleString()})
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t">
+                      <TableCell className="pl-8 font-medium">Total Operating Expenses</TableCell>
+                      <TableCell className="text-right font-medium text-destructive">
+                        ({(financialData?.totalExpenses || 0).toLocaleString()})
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Net Income */}
+                    <TableRow className="border-t-4 bg-muted">
+                      <TableCell className="font-bold text-lg">NET INCOME</TableCell>
+                      <TableCell className={`text-right font-bold text-lg ${(financialData?.netIncome || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {(financialData?.netIncome || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Balance Sheet */}
+          <TabsContent value="balance">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Balance Sheet
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  As of {format(dateRange.end, "MMMM d, yyyy")}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-2 gap-8">
+                  {/* Assets */}
+                  <div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[60%]">ASSETS</TableHead>
+                          <TableHead className="text-right">Amount (UGX)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow className="bg-muted/50">
+                          <TableCell className="font-semibold">Current Assets</TableCell>
+                          <TableCell></TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Cash on Hand</TableCell>
+                          <TableCell className="text-right">{(financialData?.cashOnHand || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Mobile Money/Bank</TableCell>
+                          <TableCell className="text-right">{(financialData?.mobileMoneySales || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Accounts Receivable</TableCell>
+                          <TableCell className="text-right">{(financialData?.accountsReceivable || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Inventory</TableCell>
+                          <TableCell className="text-right">{(financialData?.inventoryValue || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Interdepartmental Receivables</TableCell>
+                          <TableCell className="text-right">{(financialData?.totalCreditsReceivable || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow className="border-t-2 bg-muted">
+                          <TableCell className="font-bold">Total Current Assets</TableCell>
+                          <TableCell className="text-right font-bold text-success">
+                            {(financialData?.totalCurrentAssets || 0).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Liabilities & Equity */}
+                  <div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[60%]">LIABILITIES & EQUITY</TableHead>
+                          <TableHead className="text-right">Amount (UGX)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow className="bg-muted/50">
+                          <TableCell className="font-semibold">Current Liabilities</TableCell>
+                          <TableCell></TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Accounts Payable</TableCell>
+                          <TableCell className="text-right">{(financialData?.totalCreditsPayable || 0).toLocaleString()}</TableCell>
+                        </TableRow>
+                        <TableRow className="border-t">
+                          <TableCell className="font-medium">Total Liabilities</TableCell>
+                          <TableCell className="text-right font-medium text-destructive">
+                            {(financialData?.totalCreditsPayable || 0).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+
+                        <TableRow className="bg-muted/50">
+                          <TableCell className="font-semibold">Equity</TableCell>
+                          <TableCell></TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="pl-8">Retained Earnings</TableCell>
+                          <TableCell className="text-right">
+                            {((financialData?.totalCurrentAssets || 0) - (financialData?.totalCreditsPayable || 0)).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-t-2 bg-muted">
+                          <TableCell className="font-bold">Total Liabilities & Equity</TableCell>
+                          <TableCell className="text-right font-bold">
+                            {(financialData?.totalCurrentAssets || 0).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="mobile-money">
-            <PaymentTransactionsReport />
-          </TabsContent>
-
-          <TabsContent value="inventory">
-            <Card>
-              <CardHeader>
-                <CardTitle>Low Stock Items by Department</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {lowStockByDept && Object.keys(lowStockByDept).length > 0 ? (
-                    Object.entries(lowStockByDept).map(([deptName, products]: [string, any]) => (
-                      <div key={deptName}>
-                        <h3 className="font-semibold text-lg mb-3">{deptName}</h3>
-                        <div className="space-y-2">
-                          {products.map((product: any) => (
-                            <div
-                              key={product.id}
-                              className="flex items-center justify-between p-3 bg-warning/10 border border-warning/20 rounded-lg"
-                            >
-                              <div>
-                                <p className="font-medium">{product.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  SKU: {product.barcode}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium text-warning">
-                                  Stock: {product.tracking_type === 'milliliter' 
-                                    ? `${product.current_stock_ml || 0} ml` 
-                                    : `${product.current_stock || 0} ${product.unit}`}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Reorder at: {product.reorder_level} {product.tracking_type === 'milliliter' ? 'ml' : product.unit}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      All products are well stocked!
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="reconciliation">
+          {/* Cash Flow Statement */}
+          <TabsContent value="cashflow">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Receipt className="w-5 h-5" />
-                  Cash Reconciliation Records
+                  <FileText className="w-5 h-5" />
+                  Cash Flow Statement
                 </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  For the period ending {format(dateRange.end, "MMMM d, yyyy")}
+                </p>
               </CardHeader>
               <CardContent>
-                {reconciliations && reconciliations.length > 0 ? (
-                  <div className="space-y-3">
-                    {reconciliations.map((rec: any) => (
-                      <div
-                        key={rec.id}
-                        className="flex justify-between items-center p-4 bg-muted/30 rounded-lg"
-                      >
-                        <div>
-                          <p className="font-medium">{rec.cashier_name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {format(new Date(rec.date), "MMM dd, yyyy")}
-                          </p>
-                          {rec.notes && (
-                            <p className="text-xs text-muted-foreground mt-1">{rec.notes}</p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm">
-                            System: <span className="font-medium">UGX {rec.system_cash.toLocaleString()}</span>
-                          </p>
-                          <p className="text-sm">
-                            Reported: <span className="font-medium">UGX {rec.reported_cash.toLocaleString()}</span>
-                          </p>
-                          <p className={`text-sm font-semibold ${rec.difference >= 0 ? 'text-success' : 'text-destructive'}`}>
-                            Diff: UGX {rec.difference.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">
-                    No reconciliation records found
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[60%]">Description</TableHead>
+                      <TableHead className="text-right">Amount (UGX)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Operating Activities */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">CASH FLOWS FROM OPERATING ACTIVITIES</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8 flex items-center gap-2">
+                        <ArrowUpRight className="w-4 h-4 text-success" />
+                        Cash received from customers
+                      </TableCell>
+                      <TableCell className="text-right text-success">{(financialData?.cashSales || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8 flex items-center gap-2">
+                        <ArrowDownRight className="w-4 h-4 text-destructive" />
+                        Cash paid for operating expenses
+                      </TableCell>
+                      <TableCell className="text-right text-destructive">({(financialData?.totalExpenses || 0).toLocaleString()})</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell className="font-medium pl-4">Net Cash from Operating Activities</TableCell>
+                      <TableCell className={`text-right font-medium ${(financialData?.operatingCashFlow || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {(financialData?.operatingCashFlow || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
 
-          <TabsContent value="expenses">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="w-5 h-5" />
-                  Business Expenses
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {expenses && expenses.length > 0 ? (
-                  <div className="space-y-3">
-                    {expenses.map((expense: any) => (
-                      <div
-                        key={expense.id}
-                        className="flex justify-between items-start p-4 bg-muted/30 rounded-lg"
-                      >
-                        <div>
-                          <p className="font-medium">{expense.category}</p>
-                          <p className="text-sm text-muted-foreground">{expense.description}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {format(new Date(expense.date), "MMM dd, yyyy")}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold text-destructive">
-                            UGX {expense.amount.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">
-                    No expenses recorded
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                    {/* Investing Activities */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">CASH FLOWS FROM INVESTING ACTIVITIES</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8 flex items-center gap-2">
+                        <Minus className="w-4 h-4 text-muted-foreground" />
+                        Purchase of equipment/assets
+                      </TableCell>
+                      <TableCell className="text-right">0</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell className="font-medium pl-4">Net Cash from Investing Activities</TableCell>
+                      <TableCell className="text-right font-medium">0</TableCell>
+                    </TableRow>
 
-          <TabsContent value="credits">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5" />
-                  Interdepartmental Credits
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {credits && credits.length > 0 ? (
-                  <div className="space-y-4">
-                    {credits.map((credit: any) => (
-                      <div
-                        key={credit.id}
-                        className="border rounded-lg p-4 space-y-2"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-semibold text-lg">
-                              UGX {credit.amount.toLocaleString()}
-                            </p>
-                            <p className="text-sm text-muted-foreground">{credit.purpose}</p>
-                          </div>
-                          <div className={`px-2 py-1 rounded text-xs font-medium ${
-                            credit.status === 'approved' ? 'bg-success/20 text-success' :
-                            credit.status === 'rejected' ? 'bg-destructive/20 text-destructive' :
-                            'bg-warning/20 text-warning'
-                          }`}>
-                            {credit.status.toUpperCase()}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">From:</span>
-                            <p className="font-medium">
-                              {credit.from_department?.name || credit.from_person || "External"}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">To:</span>
-                            <p className="font-medium">
-                              {credit.to_department?.name || credit.to_person || "External"}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(credit.created_at), "MMM dd, yyyy 'at' h:mm a")}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center text-muted-foreground py-8">
-                    No credit transactions found
-                  </p>
-                )}
+                    {/* Financing Activities */}
+                    <TableRow className="bg-muted/50">
+                      <TableCell className="font-semibold">CASH FLOWS FROM FINANCING ACTIVITIES</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8 flex items-center gap-2">
+                        <ArrowUpRight className="w-4 h-4 text-success" />
+                        Credits received
+                      </TableCell>
+                      <TableCell className="text-right text-success">{(financialData?.totalCreditsReceivable || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="pl-8 flex items-center gap-2">
+                        <ArrowDownRight className="w-4 h-4 text-destructive" />
+                        Credits paid
+                      </TableCell>
+                      <TableCell className="text-right text-destructive">({(financialData?.totalCreditsPayable || 0).toLocaleString()})</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t">
+                      <TableCell className="font-medium pl-4">Net Cash from Financing Activities</TableCell>
+                      <TableCell className={`text-right font-medium ${(financialData?.financingCashFlow || 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {(financialData?.financingCashFlow || 0).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Net Change */}
+                    <TableRow className="border-t-4 bg-muted">
+                      <TableCell className="font-bold text-lg">NET CHANGE IN CASH</TableCell>
+                      <TableCell className={`text-right font-bold text-lg ${((financialData?.operatingCashFlow || 0) + (financialData?.financingCashFlow || 0)) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {((financialData?.operatingCashFlow || 0) + (financialData?.financingCashFlow || 0)).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow>
+                      <TableCell className="pl-4">Cash at Beginning of Period</TableCell>
+                      <TableCell className="text-right">{(financialData?.cashOnHand || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow className="border-t-2 bg-primary/10">
+                      <TableCell className="font-bold">Cash at End of Period</TableCell>
+                      <TableCell className="text-right font-bold">
+                        {((financialData?.cashOnHand || 0) + (financialData?.operatingCashFlow || 0) + (financialData?.financingCashFlow || 0)).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </TabsContent>
