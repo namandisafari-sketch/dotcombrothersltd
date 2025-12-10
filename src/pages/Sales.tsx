@@ -797,16 +797,16 @@ const Sales = () => {
                     <TabsContent value="products" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
                       {products?.map((product) => {
                         // Calculate display price for perfume products
-                        const displayPrice = product.tracking_type === "milliliter"
+                        const displayPrice = product.tracking_type === "ml"
                           ? (product.retail_price_per_ml || product.wholesale_price_per_ml || 0)
                           : product.selling_price;
                       
-                        const priceLabel = product.tracking_type === "milliliter" 
+                        const priceLabel = product.tracking_type === "ml" 
                           ? "per ml" 
                           : "";
                       
-                        const stockDisplay = product.tracking_type === "milliliter"
-                          ? `${product.current_stock_ml || 0} ml`
+                        const stockDisplay = product.tracking_type === "ml"
+                          ? `${product.total_ml || 0} ml`
                           : product.current_stock;
                       
                         return (
@@ -828,7 +828,7 @@ const Sales = () => {
                                 {product.allow_custom_price && (
                                   <Badge variant="outline" className="text-xs">Custom Price</Badge>
                                 )}
-                                {product.tracking_type === "milliliter" && (
+                                {product.tracking_type === "ml" && (
                                   <Badge variant="outline" className="text-xs">Refill</Badge>
                                 )}
                               </div>
@@ -1116,7 +1116,7 @@ const Sales = () => {
           onOpenChange={setShowVariantSelector}
           productName={selectedProductForVariant?.name || ""}
           basePrice={selectedProductForVariant?.selling_price || 0}
-          variants={productVariants}
+          variants={productVariants as any[]}
           onSelectVariant={handleVariantSelect}
         />
       </div>
