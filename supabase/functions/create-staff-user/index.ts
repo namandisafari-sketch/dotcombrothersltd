@@ -102,16 +102,8 @@ Deno.serve(async (req) => {
       throw roleError;
     }
 
-    // Update profile with department (null for admins without department assignment)
-    const { error: profileError } = await supabaseClient
-      .from('profiles')
-      .update({ department_id: departmentId || null })
-      .eq('id', authData.user.id);
-
-    if (profileError) {
-      console.error('Profile update error:', profileError);
-      throw profileError;
-    }
+    // Department is stored in user_roles, not in profiles
+    // Profile is auto-created by the handle_new_user trigger
 
     // Insert navigation permissions if provided and user is not admin
     if (navPermissions && Array.isArray(navPermissions) && navPermissions.length > 0 && role !== 'admin') {
