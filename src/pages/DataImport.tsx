@@ -24,9 +24,17 @@ export default function DataImport() {
   const loadDefaultBackup = async () => {
     try {
       const response = await fetch('/backup.json');
+      
+      // Check if the response is actually JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('No backup file found. Please upload a custom backup file.');
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to load backup file');
       }
+      
       const data = await response.json();
       setBackupData(data);
       setFile(new File([JSON.stringify(data)], 'backup.json', { type: 'application/json' }));
