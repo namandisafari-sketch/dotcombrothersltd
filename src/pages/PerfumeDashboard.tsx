@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -23,8 +23,13 @@ export default function PerfumeDashboard() {
     queryKey: ["user-department", departmentId],
     queryFn: async () => {
       if (!departmentId) return null;
-      const allDepts = await localApi.departments.getAll();
-      return allDepts.find((d: any) => d.id === departmentId) || null;
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", departmentId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
     },
     enabled: !!departmentId,
   });
@@ -40,14 +45,16 @@ export default function PerfumeDashboard() {
       if (!departmentId) return 0;
       
       const today = new Date().toISOString().split("T")[0];
-      const sales = await localApi.sales.getAll({ 
-        startDate: today, 
-        endDate: today,
-        departmentId,
-        status: 'active'
-      });
+      const { data, error } = await supabase
+        .from("sales")
+        .select("total")
+        .eq("department_id", departmentId)
+        .neq("status", "voided")
+        .gte("created_at", `${today}T00:00:00`)
+        .lte("created_at", `${today}T23:59:59`);
       
-      return sales.reduce((sum: number, sale: any) => sum + Number(sale.total), 0);
+      if (error) throw error;
+      return (data || []).reduce((sum, sale) => sum + Number(sale.total || 0), 0);
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 5000,
@@ -59,12 +66,16 @@ export default function PerfumeDashboard() {
     queryFn: async () => {
       if (!departmentId) return 0;
       
-      const products = await localApi.products.getAll(departmentId);
-      const masterPerfume = products.find((p: any) => 
-        p.name === "Oil Perfume" && p.tracking_type === "milliliter"
-      );
+      const { data, error } = await supabase
+        .from("products")
+        .select("total_ml")
+        .eq("department_id", departmentId)
+        .eq("name", "Oil Perfume")
+        .eq("tracking_type", "ml")
+        .maybeSingle();
       
-      return masterPerfume?.current_stock_ml || 0;
+      if (error) throw error;
+      return data?.total_ml || 0;
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 10000,
@@ -76,15 +87,17 @@ export default function PerfumeDashboard() {
     queryFn: async () => {
       if (!departmentId) return [];
       
-      const products = await localApi.products.getLowStock(departmentId);
-      return products
-        .filter((p: any) => 
-          p.tracking_type === "milliliter" && 
-          p.name !== "Oil Perfume" &&
-          (p.current_stock_ml || 0) <= (p.reorder_level || 0)
-        )
-        .sort((a: any, b: any) => (a.current_stock_ml || 0) - (b.current_stock_ml || 0))
-        .slice(0, 5);
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("department_id", departmentId)
+        .eq("tracking_type", "ml")
+        .neq("name", "Oil Perfume")
+        .order("total_ml", { ascending: true })
+        .limit(5);
+      
+      if (error) throw error;
+      return (data || []).filter(p => (p.total_ml || 0) <= (p.min_stock || 0));
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 10000,
@@ -95,7 +108,15 @@ export default function PerfumeDashboard() {
     queryKey: ["perfume-recent-sales", departmentId],
     queryFn: async () => {
       if (!departmentId) return [];
-      return await localApi.sales.getRecent(departmentId, 5);
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*")
+        .eq("department_id", departmentId)
+        .neq("status", "voided")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 5000,
@@ -107,21 +128,34 @@ export default function PerfumeDashboard() {
     queryFn: async () => {
       if (!departmentId) return [];
       
-      const sales = await localApi.sales.getAll({ 
-        departmentId,
-        status: 'active'
-      });
+      // Get sales for this department
+      const { data: sales, error: salesError } = await supabase
+        .from("sales")
+        .select("id")
+        .eq("department_id", departmentId)
+        .neq("status", "voided");
       
-      // Get all sale items for these sales
+      if (salesError) throw salesError;
+      if (!sales || sales.length === 0) return [];
+      
+      const saleIds = sales.map(s => s.id);
+      
+      // Get sale items with scent mixtures
+      const { data: items, error: itemsError } = await supabase
+        .from("sale_items")
+        .select("scent_mixture")
+        .in("sale_id", saleIds)
+        .not("scent_mixture", "is", null);
+      
+      if (itemsError) throw itemsError;
+      
+      // Count scent mixtures
       const scentCounts: Record<string, number> = {};
-      for (const sale of sales) {
-        const items = await localApi.saleItems.getBySale(sale.id);
-        items.forEach((item: any) => {
-          if (item.scent_mixture) {
-            scentCounts[item.scent_mixture] = (scentCounts[item.scent_mixture] || 0) + 1;
-          }
-        });
-      }
+      (items || []).forEach((item) => {
+        if (item.scent_mixture) {
+          scentCounts[item.scent_mixture] = (scentCounts[item.scent_mixture] || 0) + 1;
+        }
+      });
 
       return Object.entries(scentCounts)
         .map(([scent, count]) => ({ scent, count }))
@@ -139,14 +173,16 @@ export default function PerfumeDashboard() {
       if (!departmentId) return 0;
       
       const today = new Date().toISOString().split("T")[0];
-      const sales = await localApi.sales.getAll({ 
-        startDate: today,
-        endDate: today,
-        departmentId,
-        status: 'active'
-      });
+      const { count, error } = await supabase
+        .from("sales")
+        .select("*", { count: "exact", head: true })
+        .eq("department_id", departmentId)
+        .neq("status", "voided")
+        .gte("created_at", `${today}T00:00:00`)
+        .lte("created_at", `${today}T23:59:59`);
       
-      return sales.length;
+      if (error) throw error;
+      return count || 0;
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 5000,
@@ -378,11 +414,11 @@ export default function PerfumeDashboard() {
                   {lowStockProducts.map((product) => (
                     <TableRow key={product.id}>
                       <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell>{Number(product.current_stock_ml || 0).toLocaleString()} ml</TableCell>
-                      <TableCell>{Number(product.reorder_level || 0).toLocaleString()} ml</TableCell>
+                      <TableCell>{Number(product.total_ml || 0).toLocaleString()} ml</TableCell>
+                      <TableCell>{Number(product.min_stock || 0).toLocaleString()} ml</TableCell>
                       <TableCell>
-                        <Badge variant={(product.current_stock_ml || 0) === 0 ? "destructive" : "secondary"}>
-                          {(product.current_stock_ml || 0) === 0 ? "Empty" : "Low"}
+                        <Badge variant={(product.total_ml || 0) === 0 ? "destructive" : "secondary"}>
+                          {(product.total_ml || 0) === 0 ? "Empty" : "Low"}
                         </Badge>
                       </TableCell>
                     </TableRow>
