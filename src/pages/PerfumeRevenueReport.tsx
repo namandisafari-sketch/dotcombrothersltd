@@ -72,31 +72,55 @@ const PerfumeRevenueReport = () => {
     );
   }
 
+  // Provide default values if revenueData is undefined
+  const safeRevenueData = revenueData || {
+    totalRevenue: 0,
+    retailRevenue: 0,
+    wholesaleRevenue: 0,
+    retailCount: 0,
+    wholesaleCount: 0,
+    totalMlSold: 0,
+    retailSales: [],
+    wholesaleSales: [],
+    creditsOut: 0,
+    creditsIn: 0,
+    netCredits: 0,
+    credits: [],
+    expenses: [],
+    totalExpenses: 0,
+    netRevenue: 0,
+    totalDifference: 0,
+    reconciliations: [],
+    totalVoidedAmount: 0,
+    voidedCount: 0,
+    voidedSales: [],
+  };
+
   const stats = [
     {
       title: "Total Revenue",
-      value: `UGX ${(revenueData?.totalRevenue || 0).toLocaleString()}`,
+      value: `UGX ${(safeRevenueData.totalRevenue || 0).toLocaleString()}`,
       icon: DollarSign,
       description: "Today's perfume sales",
       variant: "default" as const,
     },
     {
       title: "Retail Revenue",
-      value: `UGX ${(revenueData?.retailRevenue || 0).toLocaleString()}`,
+      value: `UGX ${(safeRevenueData.retailRevenue || 0).toLocaleString()}`,
       icon: Users,
-      description: `${revenueData?.retailCount || 0} transactions`,
+      description: `${safeRevenueData.retailCount || 0} transactions`,
       variant: "secondary" as const,
     },
     {
       title: "Wholesale Revenue",
-      value: `UGX ${(revenueData?.wholesaleRevenue || 0).toLocaleString()}`,
+      value: `UGX ${(safeRevenueData.wholesaleRevenue || 0).toLocaleString()}`,
       icon: TrendingUp,
-      description: `${revenueData?.wholesaleCount || 0} transactions`,
+      description: `${safeRevenueData.wholesaleCount || 0} transactions`,
       variant: "default" as const,
     },
     {
       title: "Total ML Sold",
-      value: `${(revenueData?.totalMlSold || 0).toLocaleString()} ml`,
+      value: `${(safeRevenueData.totalMlSold || 0).toLocaleString()} ml`,
       icon: Package,
       description: "Across all perfumes",
       variant: "outline" as const,
@@ -160,17 +184,17 @@ const PerfumeRevenueReport = () => {
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Total Revenue:</span>
                 <span className="text-2xl font-bold">
-                  UGX {revenueData.retailRevenue.toLocaleString()}
+                  UGX {safeRevenueData.retailRevenue.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Transactions:</span>
-                <Badge variant="secondary">{revenueData.retailCount}</Badge>
+                <Badge variant="secondary">{safeRevenueData.retailCount}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Share of Total:</span>
                 <span className="font-semibold">
-                  {revenueData.totalRevenue > 0 ? ((revenueData.retailRevenue / revenueData.totalRevenue) * 100).toFixed(1) : 0}%
+                  {safeRevenueData.totalRevenue > 0 ? ((safeRevenueData.retailRevenue / safeRevenueData.totalRevenue) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             </CardContent>
@@ -187,17 +211,17 @@ const PerfumeRevenueReport = () => {
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Total Revenue:</span>
                 <span className="text-2xl font-bold">
-                  UGX {revenueData.wholesaleRevenue.toLocaleString()}
+                  UGX {safeRevenueData.wholesaleRevenue.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Transactions:</span>
-                <Badge variant="secondary">{revenueData.wholesaleCount}</Badge>
+                <Badge variant="secondary">{safeRevenueData.wholesaleCount}</Badge>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Share of Total:</span>
                 <span className="font-semibold">
-                  {revenueData.totalRevenue > 0 ? ((revenueData.wholesaleRevenue / revenueData.totalRevenue) * 100).toFixed(1) : 0}%
+                  {safeRevenueData.totalRevenue > 0 ? ((safeRevenueData.wholesaleRevenue / safeRevenueData.totalRevenue) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             </CardContent>
@@ -217,12 +241,12 @@ const PerfumeRevenueReport = () => {
               <div className="flex justify-between items-center pb-4 border-b">
                 <span className="font-semibold">Total Expenses:</span>
                 <span className="text-2xl font-bold text-destructive">
-                  UGX {revenueData.totalExpenses.toLocaleString()}
+                  UGX {safeRevenueData.totalExpenses.toLocaleString()}
                 </span>
               </div>
-              {revenueData.expenses.length > 0 ? (
+              {safeRevenueData.expenses.length > 0 ? (
                 <div className="space-y-3">
-                  {revenueData.expenses.map((expense: any) => (
+                  {safeRevenueData.expenses.map((expense: any) => (
                     <div key={expense.id} className="flex justify-between items-start p-3 bg-muted/50 rounded-lg">
                       <div className="space-y-1">
                         <p className="font-medium">{expense.description}</p>
@@ -251,13 +275,13 @@ const PerfumeRevenueReport = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center pb-4 border-b">
                 <span className="font-semibold">Total Difference:</span>
-                <span className={`text-2xl font-bold ${revenueData.totalDifference >= 0 ? 'text-green-600' : 'text-destructive'}`}>
-                  UGX {revenueData.totalDifference.toLocaleString()}
+                <span className={`text-2xl font-bold ${safeRevenueData.totalDifference >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                  UGX {safeRevenueData.totalDifference.toLocaleString()}
                 </span>
               </div>
-              {revenueData.reconciliations.length > 0 ? (
+              {safeRevenueData.reconciliations.length > 0 ? (
                 <div className="space-y-3">
-                  {revenueData.reconciliations.map((rec: any) => (
+                  {safeRevenueData.reconciliations.map((rec: any) => (
                     <div key={rec.id} className="p-3 bg-muted/50 rounded-lg">
                       <div className="flex justify-between items-start mb-2">
                         <div>
@@ -306,16 +330,16 @@ const PerfumeRevenueReport = () => {
               <div className="flex justify-between items-center pb-4 border-b">
                 <span className="font-semibold">Total Voided Amount:</span>
                 <span className="text-2xl font-bold text-destructive">
-                  UGX {revenueData.totalVoidedAmount.toLocaleString()}
+                  UGX {safeRevenueData.totalVoidedAmount.toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Voided Transactions:</span>
-                <Badge variant="destructive">{revenueData.voidedCount}</Badge>
+                <Badge variant="destructive">{safeRevenueData.voidedCount}</Badge>
               </div>
-              {revenueData.voidedSales.length > 0 ? (
+              {safeRevenueData.voidedSales.length > 0 ? (
                 <div className="space-y-3 mt-4">
-                  {revenueData.voidedSales.map((sale: any) => (
+                  {safeRevenueData.voidedSales.map((sale: any) => (
                     <div key={sale.id} className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                       <div className="flex justify-between items-start mb-2">
                         <div>
@@ -363,25 +387,25 @@ const PerfumeRevenueReport = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Credits Out</p>
                   <p className="text-xl font-bold text-destructive">
-                    UGX {revenueData.creditsOut.toLocaleString()}
+                    UGX {safeRevenueData.creditsOut.toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Credits In</p>
                   <p className="text-xl font-bold text-green-600">
-                    UGX {revenueData.creditsIn.toLocaleString()}
+                    UGX {safeRevenueData.creditsIn.toLocaleString()}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Net Credits</p>
-                  <p className={`text-xl font-bold ${revenueData.netCredits >= 0 ? 'text-green-600' : 'text-destructive'}`}>
-                    UGX {revenueData.netCredits.toLocaleString()}
+                  <p className={`text-xl font-bold ${safeRevenueData.netCredits >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                    UGX {safeRevenueData.netCredits.toLocaleString()}
                   </p>
                 </div>
               </div>
-              {revenueData.credits.length > 0 ? (
+              {safeRevenueData.credits.length > 0 ? (
                 <div className="space-y-3">
-                  {revenueData.credits.map((credit: any) => (
+                  {safeRevenueData.credits.map((credit: any) => (
                     <div key={credit.id} className="p-3 bg-muted/50 rounded-lg">
                       <div className="flex justify-between items-start mb-2">
                         <div>
