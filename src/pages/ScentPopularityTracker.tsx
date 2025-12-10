@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sparkles, TrendingUp, AlertCircle, DollarSign, Droplets } from "lucide-react";
+import { Sparkles, TrendingUp, AlertCircle } from "lucide-react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState } from "react";
@@ -13,20 +13,24 @@ export default function ScentPopularityTracker() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
 
-  // Check if user's department is a perfume department
   const { data: userDepartment } = useQuery({
     queryKey: ["user-department-check", userDepartmentId],
     queryFn: async () => {
       if (!userDepartmentId) return null;
-      const departments = await localApi.departments.getAll();
-      return departments.find((d: any) => d.id === userDepartmentId && d.is_perfume_department);
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", userDepartmentId)
+        .eq("is_perfume_department", true)
+        .single();
+      if (error) return null;
+      return data;
     },
     enabled: !!userDepartmentId && !isAdmin,
   });
 
   const isPerfumeDepartment = !!userDepartment || isAdmin;
 
-  // Only allow access to perfume departments or admins
   if (!isAdmin && !isPerfumeDepartment) {
     return (
       <div className="min-h-screen bg-background pt-32 lg:pt-20">
@@ -43,11 +47,55 @@ export default function ScentPopularityTracker() {
     );
   }
 
+  const activeDepartmentId = isAdmin ? selectedDepartmentId : userDepartmentId;
+
   const { data: scentData } = useQuery({
-    queryKey: ["scent-popularity", selectedDepartmentId],
-    queryFn: () => localApi.perfumeReports.getScentPopularity({
-      departmentId: selectedDepartmentId || undefined,
-    }),
+    queryKey: ["scent-popularity", activeDepartmentId],
+    queryFn: async () => {
+      // Get sales for the department
+      let salesQuery = supabase
+        .from("sales")
+        .select("id")
+        .eq("status", "completed");
+      
+      if (activeDepartmentId) {
+        salesQuery = salesQuery.eq("department_id", activeDepartmentId);
+      }
+      
+      const { data: sales, error: salesError } = await salesQuery;
+      if (salesError || !sales) return [];
+      
+      const saleIds = sales.map(s => s.id);
+      if (saleIds.length === 0) return [];
+      
+      // Get sale items with scent mixture
+      const { data: items, error: itemsError } = await supabase
+        .from("sale_items")
+        .select("*")
+        .in("sale_id", saleIds)
+        .not("scent_mixture", "is", null);
+      
+      if (itemsError || !items) return [];
+      
+      // Aggregate by scent
+      const scentMap = new Map<string, { count: number; revenue: number; totalMl: number }>();
+      
+      items.forEach(item => {
+        const scent = item.scent_mixture || "Unknown";
+        const existing = scentMap.get(scent) || { count: 0, revenue: 0, totalMl: 0 };
+        scentMap.set(scent, {
+          count: existing.count + 1,
+          revenue: existing.revenue + Number(item.total || 0),
+          totalMl: existing.totalMl + Number(item.ml_amount || 0),
+        });
+      });
+      
+      return Array.from(scentMap.entries()).map(([scent, data]) => ({
+        scent,
+        ...data,
+      })).sort((a, b) => b.count - a.count);
+    },
+    enabled: isAdmin || isPerfumeDepartment,
   });
 
   const totalSales = scentData?.reduce((sum, item) => sum + item.count, 0) || 0;
@@ -69,7 +117,6 @@ export default function ScentPopularityTracker() {
           />
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader>
@@ -109,7 +156,6 @@ export default function ScentPopularityTracker() {
           </Card>
         </div>
 
-        {/* Popular Scents Table */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

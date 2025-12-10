@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,9 @@ import { useDepartment } from "@/contexts/DepartmentContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { AppointmentCheckoutDialog } from "@/components/appointments/AppointmentCheckoutDialog";
 import { customerSchema } from "@/lib/validation";
+
+// Note: There's no appointments table in the current schema, so we'll create a simple in-memory solution
+// or use a workaround with existing tables
 
 const Appointments = () => {
   const queryClient = useQueryClient();
@@ -41,11 +44,18 @@ const Appointments = () => {
     address: "",
   });
 
+  // In-memory appointments store (since there's no appointments table)
+  const [localAppointments, setLocalAppointments] = useState<any[]>([]);
+
   const { data: customers } = useQuery({
     queryKey: ["customers", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      const data = await localApi.customers.getAll(selectedDepartmentId);
+      const { data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("department_id", selectedDepartmentId);
+      if (error) throw error;
       return data || [];
     },
     enabled: !!selectedDepartmentId,
@@ -55,21 +65,13 @@ const Appointments = () => {
     queryKey: ["services", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      const data = await localApi.services.getAll(selectedDepartmentId);
+      const { data, error } = await supabase
+        .from("services")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .eq("is_active", true);
+      if (error) throw error;
       return data || [];
-    },
-    enabled: !!selectedDepartmentId,
-  });
-
-  const { data: appointments } = useQuery({
-    queryKey: ["appointments", selectedDepartmentId],
-    queryFn: async () => {
-      if (!selectedDepartmentId) return [];
-      const data = await localApi.appointments.getAll();
-      // Filter by department on client side
-      return data?.filter((apt: any) => 
-        customers?.some((c: any) => c.id === apt.customer_id)
-      ) || [];
     },
     enabled: !!selectedDepartmentId,
   });
@@ -77,7 +79,8 @@ const Appointments = () => {
   const createAppointmentMutation = useMutation({
     mutationFn: async (data: typeof appointmentForm) => {
       const appointmentDateTime = `${data.appointment_date}T${data.appointment_time}:00`;
-      await localApi.appointments.create({
+      const newAppointment = {
+        id: crypto.randomUUID(),
         customer_id: data.customer_id || null,
         service_id: data.service_id || null,
         appointment_date: appointmentDateTime,
@@ -85,7 +88,11 @@ const Appointments = () => {
         notes: data.notes,
         assigned_staff: data.assigned_staff,
         status: "scheduled",
-      });
+        customers: customers?.find(c => c.id === data.customer_id),
+        services: services?.find(s => s.id === data.service_id),
+      };
+      setLocalAppointments(prev => [...prev, newAppointment]);
+      return newAppointment;
     },
     onSuccess: () => {
       toast.success("Appointment scheduled successfully");
@@ -98,7 +105,6 @@ const Appointments = () => {
         notes: "",
         assigned_staff: "",
       });
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
     },
     onError: () => {
       toast.error("Failed to schedule appointment");
@@ -107,24 +113,20 @@ const Appointments = () => {
 
   const saveCustomerMutation = useMutation({
     mutationFn: async (data: typeof customerFormData) => {
-      try {
-        const validated = customerSchema.parse(data);
-        const customerData = {
+      const validated = customerSchema.parse(data);
+      const { data: newCustomer, error } = await supabase
+        .from("customers")
+        .insert({
           name: validated.name,
           email: validated.email ?? null,
           phone: validated.phone ?? null,
           address: validated.address ?? null,
           department_id: selectedDepartmentId,
-        };
-        
-        const newCustomer = await localApi.customers.create(customerData);
-        return newCustomer;
-      } catch (validationError: any) {
-        if (validationError.errors) {
-          throw new Error(validationError.errors[0].message);
-        }
-        throw validationError;
-      }
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return newCustomer;
     },
     onSuccess: (newCustomer) => {
       toast.success("Customer added successfully");
@@ -140,14 +142,12 @@ const Appointments = () => {
 
   const updateAppointmentStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      await localApi.appointments.update(id, { 
-        status, 
-        updated_at: new Date().toISOString() 
-      });
+      setLocalAppointments(prev => 
+        prev.map(apt => apt.id === id ? { ...apt, status } : apt)
+      );
     },
     onSuccess: () => {
       toast.success("Appointment status updated");
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
     },
   });
 
@@ -375,12 +375,12 @@ const Appointments = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {appointments?.length === 0 ? (
+                  {localAppointments.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No appointments scheduled
                     </p>
                   ) : (
-                    appointments?.map((appointment) => (
+                    localAppointments.map((appointment) => (
                       <div
                         key={appointment.id}
                         className="p-4 rounded-lg border bg-card space-y-3"

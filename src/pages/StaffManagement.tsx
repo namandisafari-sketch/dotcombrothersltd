@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ const StaffManagement = () => {
     email: "",
     password: "",
     fullName: "",
-    role: "user",
+    role: "staff",
     departmentId: "",
     navPermissions: [] as string[],
   });
@@ -81,7 +81,8 @@ const StaffManagement = () => {
   const { data: departments } = useQuery({
     queryKey: ["departments"],
     queryFn: async () => {
-      const data = await localApi.departments.getAll();
+      const { data, error } = await supabase.from("departments").select("*").eq("is_active", true);
+      if (error) throw error;
       return data || [];
     },
   });
@@ -89,39 +90,66 @@ const StaffManagement = () => {
   const { data: userProfiles, isLoading: isLoadingProfiles } = useQuery({
     queryKey: ["user-profiles-with-roles"],
     queryFn: async () => {
-      const profiles = await localApi.profiles.getAll();
-      // Note: Nav permissions would need separate endpoint or be included in profiles
-      return profiles || [];
+      const { data: profiles, error } = await supabase
+        .from("profiles")
+        .select(`
+          *,
+          user_roles (role, department_id, nav_permissions)
+        `);
+      if (error) throw error;
+      
+      // Get department names
+      const profilesWithDepts = await Promise.all((profiles || []).map(async (profile) => {
+        const userRole = Array.isArray(profile.user_roles) ? profile.user_roles[0] : null;
+        const deptId = userRole?.department_id;
+        let departmentName = "No Department";
+        if (deptId) {
+          const { data: dept } = await supabase.from("departments").select("name").eq("id", deptId).single();
+          departmentName = dept?.name || "Unknown";
+        }
+        return {
+          ...profile,
+          department_id: deptId,
+          departments: { name: departmentName },
+          user_nav_permissions: userRole?.nav_permissions || [],
+          parsed_role: userRole?.role || "staff",
+        };
+      }));
+      
+      return profilesWithDepts;
     },
   });
 
   const updateUserMutation = useMutation({
     mutationFn: async (data: { userId: string; role: string; departmentId: string; navPermissions: string[] }) => {
-      await localApi.users.updateRole(data.userId, {
-        role: data.role,
-        departmentId: data.departmentId,
-        navPermissions: data.navPermissions,
-      });
+      const { error } = await supabase
+        .from("user_roles")
+        .update({
+          role: data.role as any,
+          department_id: data.departmentId || null,
+          nav_permissions: data.navPermissions,
+        })
+        .eq("user_id", data.userId);
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("User updated successfully");
       setIsDialogOpen(false);
       setEditingUser(null);
-      setRoleForm({ email: "", password: "", fullName: "", role: "user", departmentId: "", navPermissions: [] });
+      setRoleForm({ email: "", password: "", fullName: "", role: "staff", departmentId: "", navPermissions: [] });
       queryClient.invalidateQueries({ queryKey: ["user-profiles-with-roles"] });
-      queryClient.invalidateQueries({ queryKey: ["user-nav-permissions"] });
     },
     onError: (error: any) => {
-      // Don't show error toast for not implemented
-      if (!error.message.includes("Not implemented")) {
-        toast.error(error.message || "Failed to update user");
-      }
+      toast.error(error.message || "Failed to update user");
     },
   });
 
   const deleteSingleUserMutation = useMutation({
     mutationFn: async ({ userId, masterPassword }: { userId: string; masterPassword: string }) => {
-      await localApi.users.delete(userId, masterPassword);
+      const { error } = await supabase.functions.invoke("delete-user", {
+        body: { userId, masterPassword },
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("User deleted successfully");
@@ -130,26 +158,23 @@ const StaffManagement = () => {
       setMasterPassword("");
     },
     onError: (error: any) => {
-      if (!error.message.includes("Not implemented")) {
-        toast.error(error.message || "Failed to delete user");
-      }
+      toast.error(error.message || "Failed to delete user");
     },
   });
 
   const toggleActivationMutation = useMutation({
     mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
-      const result = await localApi.users.toggleActivation(userId, isActive);
-      return result;
+      const { error } = await supabase.functions.invoke("toggle-user-activation", {
+        body: { userId, isActive },
+      });
+      if (error) throw error;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-profiles-with-roles"] });
       toast.success("User activation toggled");
     },
     onError: (error: any) => {
-      if (!error.message.includes("Not implemented")) {
-        console.error("Toggle activation error:", error);
-        toast.error(error.message || "Failed to toggle user activation");
-      }
+      toast.error(error.message || "Failed to toggle user activation");
     },
   });
 
@@ -166,40 +191,43 @@ const StaffManagement = () => {
 
   const createUserMutation = useMutation({
     mutationFn: async (data: { email: string; password: string; fullName: string; role: string; departmentId: string; navPermissions: string[] }) => {
-      // Validate email
       const emailValidation = emailSchema.safeParse(data.email);
       if (!emailValidation.success) {
         throw new Error(emailValidation.error.errors[0].message);
       }
 
-      // Validate password
       const passwordValidation = passwordSchema.safeParse(data.password);
       if (!passwordValidation.success) {
         throw new Error(passwordValidation.error.errors[0].message);
       }
 
-      const result = await localApi.users.create(data);
-      return result;
+      const { error } = await supabase.functions.invoke("create-staff-user", {
+        body: {
+          email: data.email,
+          password: data.password,
+          fullName: data.fullName,
+          role: data.role,
+          departmentId: data.departmentId || null,
+          navPermissions: data.navPermissions,
+        },
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("User created successfully");
       setIsDialogOpen(false);
       setIsCreatingUser(false);
-      setRoleForm({ email: "", password: "", fullName: "", role: "user", departmentId: "", navPermissions: [] });
+      setRoleForm({ email: "", password: "", fullName: "", role: "staff", departmentId: "", navPermissions: [] });
       queryClient.invalidateQueries({ queryKey: ["user-profiles-with-roles"] });
-      queryClient.invalidateQueries({ queryKey: ["user-nav-permissions"] });
     },
     onError: (error: any) => {
-      if (!error.message.includes("Not implemented")) {
-        toast.error(error.message || "Failed to create user");
-      }
+      toast.error(error.message || "Failed to create user");
     },
   });
 
   const handleAssignRole = async () => {
     if (isCreatingUser || editingUser) {
       if (editingUser) {
-        // Update existing user
         updateUserMutation.mutate({
           userId: editingUser.userId,
           role: roleForm.role,
@@ -209,34 +237,28 @@ const StaffManagement = () => {
         return;
       }
       
-      // Create new user
-      // Validate inputs
       if (!roleForm.email || !roleForm.password || !roleForm.fullName) {
         toast.error("Please fill in all required fields");
         return;
       }
 
-      // Validate email using centralized schema
       const emailValidation = emailSchema.safeParse(roleForm.email);
       if (!emailValidation.success) {
         toast.error(emailValidation.error.errors[0].message);
         return;
       }
 
-      // Validate password using centralized schema
       const passwordValidation = passwordSchema.safeParse(roleForm.password);
       if (!passwordValidation.success) {
         toast.error(passwordValidation.error.errors[0].message);
         return;
       }
 
-      // Validate name length
       if (roleForm.fullName.trim().length < 2) {
         toast.error("Name must be at least 2 characters");
         return;
       }
 
-      // Validate department selection for non-admins only
       if (roleForm.role !== "admin" && (!roleForm.departmentId || roleForm.departmentId === "none")) {
         toast.error("Please select a department for non-admin users");
         return;
@@ -251,7 +273,6 @@ const StaffManagement = () => {
         navPermissions: roleForm.navPermissions,
       });
     } else {
-      // Find the user by ID (email field contains ID)
       const user = userProfiles?.find(p => p.id === roleForm.email);
       
       if (!user) {
@@ -270,7 +291,7 @@ const StaffManagement = () => {
 
   const getRoleColor = (role: string) => {
     if (role === "admin") return "destructive";
-    if (role === "moderator") return "default";
+    if (role === "manager") return "default";
     return "secondary";
   };
 
@@ -338,7 +359,7 @@ const StaffManagement = () => {
                       onClick={() => {
                         setIsCreatingUser(false);
                         setEditingUser(null);
-                        setRoleForm({ email: "", password: "", fullName: "", role: "user", departmentId: "", navPermissions: [] });
+                        setRoleForm({ email: "", password: "", fullName: "", role: "staff", departmentId: "", navPermissions: [] });
                       }}
                     >
                       <UserPlus className="w-4 h-4 mr-2" />
@@ -360,7 +381,7 @@ const StaffManagement = () => {
                             onClick={() => {
                               setIsCreatingUser(false);
                               setEditingUser(null);
-                              setRoleForm({ email: "", password: "", fullName: "", role: "user", departmentId: "", navPermissions: [] });
+                              setRoleForm({ email: "", password: "", fullName: "", role: "staff", departmentId: "", navPermissions: [] });
                             }}
                             className="flex-1"
                           >
@@ -372,7 +393,7 @@ const StaffManagement = () => {
                             onClick={() => {
                               setIsCreatingUser(true);
                               setEditingUser(null);
-                              setRoleForm({ email: "", password: "", fullName: "", role: "user", departmentId: "", navPermissions: [] });
+                              setRoleForm({ email: "", password: "", fullName: "", role: "staff", departmentId: "", navPermissions: [] });
                             }}
                             className="flex-1"
                           >
@@ -457,8 +478,9 @@ const StaffManagement = () => {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="user">User</SelectItem>
-                            <SelectItem value="moderator">Moderator</SelectItem>
+                            <SelectItem value="staff">Staff</SelectItem>
+                            <SelectItem value="cashier">Cashier</SelectItem>
+                            <SelectItem value="manager">Manager</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>
@@ -487,7 +509,6 @@ const StaffManagement = () => {
                         </Select>
                       </div>
 
-                      {/* Navigation Permissions */}
                       {roleForm.role !== "admin" && (
                         <div className="space-y-2">
                           <Label>Navigation Access (Select tabs user can see)</Label>
@@ -501,7 +522,6 @@ const StaffManagement = () => {
                                     checked={roleForm.navPermissions.includes(item.path)}
                                     onCheckedChange={(checked) => {
                                       if (checked) {
-                                        // Use Set to prevent duplicates
                                         const uniquePermissions = Array.from(new Set([...roleForm.navPermissions, item.path]));
                                         setRoleForm({
                                           ...roleForm,
@@ -559,11 +579,9 @@ const StaffManagement = () => {
                 ) : (
                   <div className="space-y-3">
                     {userProfiles.map((profile) => {
-                      const role = profile.user_roles?.[0]?.role || "user";
+                      const role = profile.parsed_role || "staff";
                       const department = profile.departments?.name || "No Department";
-                      const navPerms = Array.isArray(profile.user_nav_permissions) 
-                        ? profile.user_nav_permissions.map((p: any) => p.nav_path) 
-                        : [];
+                      const navPerms = profile.user_nav_permissions || [];
                       
                       return (
                         <div
@@ -634,10 +652,8 @@ const StaffManagement = () => {
                               variant="outline"
                               size="sm"
                               onClick={() => {
-                                const role = profile.user_roles?.[0]?.role || "user";
-                                const navPerms = Array.isArray(profile.user_nav_permissions)
-                                  ? profile.user_nav_permissions.map((p: any) => p.nav_path)
-                                  : [];
+                                const editRole = profile.parsed_role || "staff";
+                                const navPerms = profile.user_nav_permissions || [];
                                 setEditingUser({ userId: profile.id, email: profile.full_name || "User" });
                                 setRoleForm({ 
                                   email: profile.id, 
@@ -684,7 +700,7 @@ const StaffManagement = () => {
               <CardContent className="space-y-4">
                 <div>
                   <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <Badge>User</Badge>
+                    <Badge>Staff</Badge>
                   </h3>
                   <ul className="space-y-1 text-sm text-muted-foreground">
                     {permissions.user.map((perm, i) => (
@@ -709,7 +725,7 @@ const StaffManagement = () => {
 
                 <div className="border-t pt-4">
                   <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <Badge>Moderator</Badge>
+                    <Badge>Manager</Badge>
                   </h3>
                   <ul className="space-y-1 text-sm text-muted-foreground">
                     {permissions.moderator.map((perm, i) => (
@@ -749,7 +765,6 @@ const StaffManagement = () => {
         userName={passwordResetDialog.userName}
       />
 
-      {/* Delete User Dialog */}
       <Dialog open={deleteUserDialog.open} onOpenChange={(open) => {
         if (!open) {
           setDeleteUserDialog({ open: false, userId: "", userName: "" });

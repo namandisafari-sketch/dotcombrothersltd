@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,25 +42,38 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
     customer_address: "",
   });
 
-  // Fetch registrations
   const { data: registrations, isLoading } = useQuery({
     queryKey: ["sensitive-registrations", departmentId],
-    queryFn: () => localApi.sensitiveRegistrations.getAll(departmentId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sensitive_service_registrations")
+        .select("*")
+        .eq("department_id", departmentId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
     enabled: !!departmentId,
   });
 
-  // Create/Update registration mutation
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       if (editMode && data.id) {
         const { id, ...updateData } = data;
-        return localApi.sensitiveRegistrations.update(id, updateData);
+        const { error } = await supabase
+          .from("sensitive_service_registrations")
+          .update(updateData)
+          .eq("id", id);
+        if (error) throw error;
       } else {
         const { id, ...insertData } = data;
-        return localApi.sensitiveRegistrations.create({
-          ...insertData,
-          department_id: departmentId,
-        });
+        const { error } = await supabase
+          .from("sensitive_service_registrations")
+          .insert({
+            ...insertData,
+            department_id: departmentId,
+          });
+        if (error) throw error;
       }
     },
     onSuccess: () => {
@@ -69,7 +82,7 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
       setDialogOpen(false);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Failed to ${editMode ? "update" : "save"} registration: ` + error.message);
     },
   });
@@ -116,8 +129,17 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
   };
 
   const handlePrintCard = async (registration: any, selectedProvider?: string) => {
-    const deptSettings = await localApi.settings.getDepartmentSettings(departmentId);
-    const globalSettings = await localApi.settings.get();
+    const { data: deptSettings } = await supabase
+      .from("settings")
+      .select("*")
+      .eq("department_id", departmentId)
+      .single();
+    
+    const { data: globalSettings } = await supabase
+      .from("settings")
+      .select("*")
+      .is("department_id", null)
+      .single();
 
     const settings = deptSettings || globalSettings;
 
@@ -163,8 +185,17 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
 
     const selectedRegs = registrations?.filter((reg) => selectedCards.has(reg.id)) || [];
     
-    const deptSettings = await localApi.settings.getDepartmentSettings(departmentId);
-    const globalSettings = await localApi.settings.get();
+    const { data: deptSettings } = await supabase
+      .from("settings")
+      .select("*")
+      .eq("department_id", departmentId)
+      .single();
+    
+    const { data: globalSettings } = await supabase
+      .from("settings")
+      .select("*")
+      .is("department_id", null)
+      .single();
 
     const settings = deptSettings || globalSettings;
 
@@ -458,7 +489,6 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
         </CardContent>
       </Card>
 
-      {/* View Details Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -472,18 +502,13 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Service Type</Label>
-                  <p className="font-medium capitalize">
-                    {selectedRegistration.service_type.replace(/_/g, " ")}
-                  </p>
+                  <p className="font-medium">{selectedRegistration.service_type?.replace(/_/g, " ")}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Registration Date</Label>
-                  <p className="font-medium">
-                    {format(new Date(selectedRegistration.created_at), "PPP")}
-                  </p>
+                  <p className="font-medium">{format(new Date(selectedRegistration.created_at), "PPP")}</p>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Customer Name</Label>
@@ -494,20 +519,16 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
                   <p className="font-medium">{selectedRegistration.customer_phone}</p>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">ID Type</Label>
-                  <p className="font-medium capitalize">
-                    {selectedRegistration.customer_id_type?.replace(/_/g, " ") || "N/A"}
-                  </p>
+                  <p className="font-medium">{selectedRegistration.customer_id_type?.replace(/_/g, " ")}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">ID Number</Label>
                   <p className="font-medium">{selectedRegistration.customer_id_number || "N/A"}</p>
                 </div>
               </div>
-
               <div>
                 <Label className="text-muted-foreground">Address</Label>
                 <p className="font-medium">{selectedRegistration.customer_address || "N/A"}</p>

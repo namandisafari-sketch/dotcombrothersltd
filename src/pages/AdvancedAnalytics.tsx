@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, TrendingUp, Package, Users } from "lucide-react";
@@ -8,24 +8,57 @@ const AdvancedAnalytics = () => {
   const { data: salesTrends } = useQuery({
     queryKey: ["sales-trends"],
     queryFn: async () => {
-      const data = await localApi.sales.getAll();
-      return data?.slice(0, 100) || [];
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*")
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
     },
   });
 
   const { data: stockMovement } = useQuery({
     queryKey: ["stock-movement"],
     queryFn: async () => {
-      const data = await localApi.products.getLowStock();
-      return data?.slice(0, 20) || [];
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("is_active", true)
+        .order("stock", { ascending: true })
+        .limit(20);
+      if (error) throw error;
+      return data || [];
     },
   });
 
   const { data: staffPerformance } = useQuery({
     queryKey: ["staff-performance"],
     queryFn: async () => {
-      const data = await localApi.staffPerformance.getAll();
-      return data?.sort((a, b) => Number(b.total_sales) - Number(a.total_sales)).slice(0, 10) || [];
+      // Aggregate sales by cashier
+      const { data, error } = await supabase
+        .from("sales")
+        .select("cashier_name, total")
+        .eq("status", "completed");
+      
+      if (error) throw error;
+      
+      const performanceMap = new Map<string, { total_sales: number; total_transactions: number }>();
+      
+      (data || []).forEach(sale => {
+        const cashier = sale.cashier_name || "Unknown";
+        const existing = performanceMap.get(cashier) || { total_sales: 0, total_transactions: 0 };
+        performanceMap.set(cashier, {
+          total_sales: existing.total_sales + Number(sale.total || 0),
+          total_transactions: existing.total_transactions + 1,
+        });
+      });
+      
+      return Array.from(performanceMap.entries())
+        .map(([name, stats]) => ({ id: name, name, ...stats }))
+        .sort((a, b) => b.total_sales - a.total_sales)
+        .slice(0, 10);
     },
   });
 
@@ -140,17 +173,17 @@ const AdvancedAnalytics = () => {
                 <div className="space-y-3">
                   {stockMovement?.map((product) => (
                     <div
-                      key={product.name}
+                      key={product.id}
                       className="flex items-center justify-between p-4 rounded-lg border bg-card"
                     >
                       <div>
                         <p className="font-medium">{product.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Reorder at: {product.reorder_level}
+                          Reorder at: {product.min_stock || 5}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold">{product.current_stock}</p>
+                        <p className="text-2xl font-bold">{product.stock || 0}</p>
                         <p className="text-xs text-muted-foreground">in stock</p>
                       </div>
                     </div>
@@ -185,7 +218,7 @@ const AdvancedAnalytics = () => {
                             {index + 1}
                           </div>
                           <div>
-                            <p className="font-medium">Staff Member</p>
+                            <p className="font-medium">{staff.name}</p>
                             <p className="text-sm text-muted-foreground">
                               {staff.total_transactions} transactions
                             </p>

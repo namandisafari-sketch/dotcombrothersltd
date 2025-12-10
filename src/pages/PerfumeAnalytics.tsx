@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,21 +14,23 @@ export default function PerfumeAnalytics() {
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
 
-  // Check if user's department is a perfume department
   const { data: userDepartment } = useQuery({
     queryKey: ["user-department-check", userDepartmentId],
     queryFn: async () => {
       if (!userDepartmentId) return null;
-      const allDepts = await localApi.departments.getAll();
-      const dept = allDepts.find((d: any) => d.id === userDepartmentId);
-      return dept?.is_perfume_department ? dept : null;
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", userDepartmentId)
+        .eq("is_perfume_department", true)
+        .single();
+      if (error) return null;
+      return data;
     },
     enabled: !!userDepartmentId && !isAdmin,
   });
 
   const isPerfumeDepartment = !!userDepartment;
-  
-  // Determine the active department ID
   const activeDepartmentId = isAdmin ? selectedDepartmentId : (isPerfumeDepartment ? userDepartmentId : null);
 
   const { data: perfumeSales } = useQuery({
@@ -36,62 +38,63 @@ export default function PerfumeAnalytics() {
     queryFn: async () => {
       if (!activeDepartmentId) return [];
       
-      const sales = await localApi.sales.getAll({ 
-        departmentId: activeDepartmentId,
-        status: 'active'
-      });
+      const { data: sales, error } = await supabase
+        .from("sales")
+        .select("id")
+        .eq("department_id", activeDepartmentId)
+        .eq("status", "completed");
       
-      // Get all sale items for perfume sales
-      const allItems = [];
-      for (const sale of sales) {
-        const items = await localApi.saleItems.getBySale(sale.id);
-        allItems.push(...items.filter((item: any) => 
-          item.item_name && item.item_name.toLowerCase().includes('perfume refill')
-        ));
-      }
+      if (error || !sales) return [];
       
-      return allItems;
+      const saleIds = sales.map(s => s.id);
+      if (saleIds.length === 0) return [];
+      
+      const { data: items, error: itemsError } = await supabase
+        .from("sale_items")
+        .select("*")
+        .in("sale_id", saleIds)
+        .ilike("item_name", "%perfume refill%");
+      
+      if (itemsError) return [];
+      return items || [];
     },
     enabled: isAdmin || isPerfumeDepartment,
   });
 
-  // Analyze scent combinations
   const scentCombinations = perfumeSales?.reduce((acc: any[], item) => {
-    const match = item.item_name.match(/\((.*?)\)/);
+    const match = item.item_name?.match(/\((.*?)\)/);
     if (match) {
       const scents = match[1];
       const existing = acc.find(a => a.scents === scents);
       if (existing) {
         existing.count += 1;
-        existing.revenue += Number(item.subtotal);
+        existing.revenue += Number(item.total);
       } else {
-        acc.push({ scents, count: 1, revenue: Number(item.subtotal) });
+        acc.push({ scents, count: 1, revenue: Number(item.total) });
       }
     }
     return acc;
   }, []).sort((a, b) => b.count - a.count).slice(0, 10) || [];
 
-  // Analyze bottle sizes
   const bottleSizes = perfumeSales?.reduce((acc: any[], item) => {
-    const size = item.quantity; // quantity represents ml in perfume refills
+    const size = item.quantity;
     const existing = acc.find(a => a.size === size);
     if (existing) {
       existing.count += 1;
-      existing.revenue += Number(item.subtotal);
+      existing.revenue += Number(item.total);
     } else {
-      acc.push({ size, count: 1, revenue: Number(item.subtotal) });
+      acc.push({ size, count: 1, revenue: Number(item.total) });
     }
     return acc;
   }, []).sort((a, b) => b.count - a.count) || [];
 
-  // Retail vs Wholesale breakdown
   const customerTypeData = perfumeSales?.reduce((acc: any, item) => {
     const isWholesale = item.customer_type === "wholesale";
     if (isWholesale) {
-      acc.wholesale += Number(item.subtotal);
+      acc.wholesale += Number(item.total);
       acc.wholesaleCount += 1;
     } else {
-      acc.retail += Number(item.subtotal);
+      acc.retail += Number(item.total);
       acc.retailCount += 1;
     }
     return acc;
@@ -102,15 +105,13 @@ export default function PerfumeAnalytics() {
     { name: "Wholesale", value: customerTypeData.wholesale, count: customerTypeData.wholesaleCount },
   ];
 
-  // Calculate average bottle size
   const avgBottleSize = perfumeSales && perfumeSales.length > 0
     ? perfumeSales.reduce((sum, item) => sum + (item.quantity || 0), 0) / perfumeSales.length
     : 0;
 
-  const totalRevenue = perfumeSales?.reduce((sum, item) => sum + Number(item.subtotal), 0) || 0;
+  const totalRevenue = perfumeSales?.reduce((sum, item) => sum + Number(item.total), 0) || 0;
   const totalSales = perfumeSales?.length || 0;
 
-  // Only allow access to perfume departments or admins
   if (!isAdmin && !isPerfumeDepartment) {
     return (
       <div className="min-h-screen bg-background pt-32 lg:pt-20">
@@ -144,7 +145,6 @@ export default function PerfumeAnalytics() {
           )}
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader>
@@ -182,7 +182,6 @@ export default function PerfumeAnalytics() {
           </Card>
         </div>
 
-        {/* Analytics Tabs */}
         <Tabs defaultValue="scents" className="space-y-4">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="scents">Top Scent Combinations</TabsTrigger>

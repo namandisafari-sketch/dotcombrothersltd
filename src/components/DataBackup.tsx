@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -28,19 +28,13 @@ const TABLES = [
   { name: "sale_items", label: "Sale Items" },
   { name: "expenses", label: "Expenses" },
   { name: "categories", label: "Categories" },
-  { name: "appointments", label: "Appointments" },
   { name: "reconciliations", label: "Reconciliations" },
   { name: "internal_stock_usage", label: "Internal Stock Usage" },
-  { name: "payment_transactions", label: "Payment Transactions" },
-  { name: "staff_performance", label: "Staff Performance" },
   { name: "customer_preferences", label: "Customer Preferences" },
   { name: "credits", label: "Credits" },
-  { name: "mobile_money_transactions", label: "Mobile Money Transactions" },
-  { name: "mobile_money_payments", label: "Mobile Money Payments" },
   { name: "department_settings", label: "Department Settings" },
   { name: "perfume_pricing_config", label: "Perfume Pricing Config" },
   { name: "perfume_scents", label: "Perfume Scents" },
-  { name: "stock_alerts", label: "Stock Alerts" },
 ];
 
 export function DataBackup() {
@@ -76,15 +70,17 @@ export function DataBackup() {
         tables: {},
       };
 
-      // Use backend API to fetch data
       for (const tableName of selectedTables) {
         try {
-          const endpoint = `/api/${tableName.replace(/_/g, '-')}`;
-          const data = await localApi.get(endpoint);
-          backupData.tables[tableName] = Array.isArray(data) ? data : [];
+          const { data, error } = await supabase.from(tableName as any).select("*");
+          if (error) {
+            console.error(`Error fetching ${tableName}:`, error);
+            backupData.tables[tableName] = [];
+          } else {
+            backupData.tables[tableName] = data || [];
+          }
         } catch (error) {
           console.error(`Error fetching ${tableName}:`, error);
-          toast.error(`Failed to export ${tableName}`);
           backupData.tables[tableName] = [];
         }
       }
@@ -135,14 +131,17 @@ export function DataBackup() {
       let successCount = 0;
       let errorCount = 0;
 
-      // Use backend API to import data
       for (const [tableName, records] of Object.entries(backupData.tables)) {
         if (!Array.isArray(records) || records.length === 0) continue;
 
         try {
-          const endpoint = `/api/${tableName.replace(/_/g, '-')}/batch`;
-          await localApi.post(endpoint, { records });
-          successCount++;
+          const { error } = await supabase.from(tableName as any).upsert(records as any);
+          if (error) {
+            console.error(`Failed to import ${tableName}:`, error);
+            errorCount++;
+          } else {
+            successCount++;
+          }
         } catch (err) {
           console.error(`Failed to import ${tableName}:`, err);
           errorCount++;
@@ -175,29 +174,21 @@ export function DataBackup() {
     try {
       setIsDeleting(true);
       
-      // First, create a backup
       toast.info("Creating backup before deletion...");
       await exportData();
       
-      // Wait a bit for the backup to complete
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       let successCount = 0;
       let errorCount = 0;
       const failedTables: string[] = [];
 
-      // Delete in order to respect foreign key constraints
       const orderedTables = [
         'sale_items',
-        'payment_transactions',
-        'mobile_money_payments',
         'sales',
         'internal_stock_usage',
-        'stock_alerts',
-        'appointments',
         'customer_preferences',
         'reconciliations',
-        'mobile_money_transactions',
         'credits',
         'expenses',
         'products',
@@ -207,7 +198,6 @@ export function DataBackup() {
         'perfume_pricing_config',
         'perfume_scents',
         'categories',
-        'staff_performance',
         'departments'
       ];
 
@@ -215,12 +205,16 @@ export function DataBackup() {
         selectedTables.includes(table)
       );
 
-      // Use backend API to delete data
       for (const tableName of tablesToDelete) {
         try {
-          const endpoint = `/api/${tableName.replace(/_/g, '-')}/delete-all`;
-          await localApi.delete(endpoint);
-          successCount++;
+          const { error } = await supabase.from(tableName as any).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          if (error) {
+            console.error(`Failed to delete from ${tableName}:`, error);
+            failedTables.push(tableName);
+            errorCount++;
+          } else {
+            successCount++;
+          }
         } catch (err) {
           console.error(`Failed to delete from ${tableName}:`, err);
           failedTables.push(tableName);
