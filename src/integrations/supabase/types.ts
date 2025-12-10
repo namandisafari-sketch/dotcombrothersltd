@@ -673,6 +673,44 @@ export type Database = {
         }
         Relationships: []
       }
+      perfume_pricing_config: {
+        Row: {
+          bottle_cost_config: Json | null
+          created_at: string | null
+          department_id: string | null
+          id: string
+          retail_bottle_pricing: Json | null
+          updated_at: string | null
+          wholesale_bottle_pricing: Json | null
+        }
+        Insert: {
+          bottle_cost_config?: Json | null
+          created_at?: string | null
+          department_id?: string | null
+          id?: string
+          retail_bottle_pricing?: Json | null
+          updated_at?: string | null
+          wholesale_bottle_pricing?: Json | null
+        }
+        Update: {
+          bottle_cost_config?: Json | null
+          created_at?: string | null
+          department_id?: string | null
+          id?: string
+          retail_bottle_pricing?: Json | null
+          updated_at?: string | null
+          wholesale_bottle_pricing?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfume_pricing_config_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: true
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       perfume_scents: {
         Row: {
           created_at: string | null

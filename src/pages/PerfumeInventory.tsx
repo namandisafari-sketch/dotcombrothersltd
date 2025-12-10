@@ -14,12 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
-// Using the existing products table schema
 interface PerfumeProduct {
   id: string;
   name: string;
@@ -34,6 +32,10 @@ interface PerfumeProduct {
   tracking_type: 'ml' | 'quantity' | null;
   department_id: string | null;
   is_active: boolean | null;
+  retail_price_per_ml: number | null;
+  wholesale_price_per_ml: number | null;
+  brand: string | null;
+  bottle_size_ml: number | null;
 }
 
 export default function PerfumeInventory() {
@@ -48,10 +50,34 @@ export default function PerfumeInventory() {
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PerfumeProduct | null>(null);
   
-  // Oil perfume pricing state (using price as retail, cost_price as cost)
+  // Bottle size pricing state
+  const [bottleSizePricingDialogOpen, setBottleSizePricingDialogOpen] = useState(false);
+  const [bottleSizePricing, setBottleSizePricing] = useState([
+    { ml: 10, price: 8000 },
+    { ml: 15, price: 12000 },
+    { ml: 20, price: 16000 },
+    { ml: 25, price: 20000 },
+    { ml: 30, price: 24000 },
+    { ml: 50, price: 40000 },
+    { ml: 100, price: 80000 },
+  ]);
+
+  // Bottle cost configuration state
+  const [bottleCostDialogOpen, setBottleCostDialogOpen] = useState(false);
+  const [bottleCostRanges, setBottleCostRanges] = useState([
+    { min: 0, max: 10, cost: 500 },
+    { min: 11, max: 30, cost: 1000 },
+    { min: 31, max: 50, cost: 1500 },
+    { min: 51, max: 100, cost: 2000 },
+    { min: 101, max: 200, cost: 2500 },
+    { min: 201, max: 999999, cost: 3000 },
+  ]);
+  
+  // Oil perfume pricing state
   const [oilPerfumePricing, setOilPerfumePricing] = useState({
     cost_price: 0,
     retail_price_per_ml: 0,
+    wholesale_price_per_ml: 0,
     min_stock: 1000,
   });
 
@@ -59,6 +85,8 @@ export default function PerfumeInventory() {
   const [productForm, setProductForm] = useState({
     name: "",
     description: "",
+    brand: "bottle" as string,
+    bottle_size_ml: 0,
     barcode: "",
     cost_price: 0,
     price: 0,
@@ -74,7 +102,7 @@ export default function PerfumeInventory() {
       const { data } = await supabase
         .from("departments")
         .select("*")
-        .ilike("name", "%perfume%")
+        .or("is_perfume_department.eq.true,name.ilike.%perfume%")
         .order("name");
       return data || [];
     },
@@ -109,9 +137,41 @@ export default function PerfumeInventory() {
       if (data) {
         setOilPerfumePricing({
           cost_price: data.cost_price || 0,
-          retail_price_per_ml: data.price || 0,
+          retail_price_per_ml: data.retail_price_per_ml || data.price || 0,
+          wholesale_price_per_ml: data.wholesale_price_per_ml || 0,
           min_stock: data.min_stock || 1000,
         });
+      }
+      return data;
+    },
+    enabled: !!selectedDepartmentId,
+  });
+
+  // Fetch bottle pricing config
+  const { data: bottlePricingConfig, refetch: refetchBottlePricingConfig } = useQuery({
+    queryKey: ["bottle-pricing-config", selectedDepartmentId],
+    queryFn: async () => {
+      if (!selectedDepartmentId) return null;
+      
+      const { data, error } = await supabase
+        .from("perfume_pricing_config")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .maybeSingle();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data?.retail_bottle_pricing) {
+        const config = data.retail_bottle_pricing as any;
+        if (config.sizes && config.sizes.length > 0) {
+          setBottleSizePricing(config.sizes);
+        }
+      }
+      if (data?.bottle_cost_config) {
+        const costConfig = data.bottle_cost_config as any;
+        if (costConfig.ranges && costConfig.ranges.length > 0) {
+          setBottleCostRanges(costConfig.ranges);
+        }
       }
       return data;
     },
@@ -142,6 +202,8 @@ export default function PerfumeInventory() {
           name: "Oil Perfume",
           cost_price: 0,
           price: 800,
+          retail_price_per_ml: 800,
+          wholesale_price_per_ml: 400,
           tracking_type: "ml" as const,
           total_ml: 0,
           min_stock: 1000,
@@ -158,7 +220,8 @@ export default function PerfumeInventory() {
       toast.success("Oil Perfume master product created");
       setOilPerfumePricing({
         cost_price: data.cost_price || 0,
-        retail_price_per_ml: data.price || 800,
+        retail_price_per_ml: data.retail_price_per_ml || 800,
+        wholesale_price_per_ml: data.wholesale_price_per_ml || 400,
         min_stock: data.min_stock || 1000,
       });
       refetchMasterPerfume();
@@ -170,7 +233,7 @@ export default function PerfumeInventory() {
     },
   });
 
-  // Fetch shop products (ml tracking, excluding Oil Perfume)
+  // Fetch shop products (excluding Oil Perfume)
   const { data: shopProducts = [], refetch: refetchShopProducts, isLoading: isLoadingProducts } = useQuery({
     queryKey: ["perfume-shop-products", selectedDepartmentId],
     queryFn: async () => {
@@ -180,7 +243,6 @@ export default function PerfumeInventory() {
         .from("products")
         .select("*")
         .eq("department_id", selectedDepartmentId)
-        .eq("tracking_type", "ml")
         .neq("name", "Oil Perfume")
         .order("name", { ascending: true });
       
@@ -218,6 +280,8 @@ export default function PerfumeInventory() {
         .update({
           cost_price: oilPerfumePricing.cost_price,
           price: oilPerfumePricing.retail_price_per_ml,
+          retail_price_per_ml: oilPerfumePricing.retail_price_per_ml,
+          wholesale_price_per_ml: oilPerfumePricing.wholesale_price_per_ml,
           min_stock: oilPerfumePricing.min_stock,
         })
         .eq("id", masterPerfume.id);
@@ -227,6 +291,46 @@ export default function PerfumeInventory() {
       toast.success("Oil perfume pricing updated");
       refetchMasterPerfume();
       setPricingDialogOpen(false);
+    },
+  });
+
+  // Bottle size pricing mutation
+  const updateBottleSizePricingMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDepartmentId) throw new Error("No department selected");
+      
+      const { error } = await supabase
+        .from("perfume_pricing_config")
+        .upsert({
+          department_id: selectedDepartmentId,
+          retail_bottle_pricing: { sizes: bottleSizePricing },
+        }, { onConflict: 'department_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Bottle size pricing updated successfully");
+      refetchBottlePricingConfig();
+      setBottleSizePricingDialogOpen(false);
+    },
+  });
+
+  // Bottle cost configuration mutation
+  const updateBottleCostMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDepartmentId) throw new Error("No department selected");
+      
+      const { error } = await supabase
+        .from("perfume_pricing_config")
+        .upsert({
+          department_id: selectedDepartmentId,
+          bottle_cost_config: { ranges: bottleCostRanges },
+        }, { onConflict: 'department_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Bottle cost configuration updated successfully");
+      refetchBottlePricingConfig();
+      setBottleCostDialogOpen(false);
     },
   });
 
@@ -245,6 +349,8 @@ export default function PerfumeInventory() {
             stock: productForm.stock,
             min_stock: productForm.min_stock,
             sku: productForm.sku,
+            brand: productForm.brand,
+            bottle_size_ml: productForm.bottle_size_ml,
           })
           .eq("id", editingProduct.id);
         if (error) throw error;
@@ -260,8 +366,10 @@ export default function PerfumeInventory() {
             stock: productForm.stock,
             min_stock: productForm.min_stock,
             sku: productForm.sku,
+            brand: productForm.brand,
+            bottle_size_ml: productForm.bottle_size_ml,
             department_id: selectedDepartmentId,
-            tracking_type: "ml" as const,
+            tracking_type: "quantity" as const,
             is_active: true,
           }]);
         if (error) throw error;
@@ -293,6 +401,8 @@ export default function PerfumeInventory() {
     setProductForm({
       name: "",
       description: "",
+      brand: "bottle",
+      bottle_size_ml: 0,
       barcode: "",
       cost_price: 0,
       price: 0,
@@ -308,6 +418,8 @@ export default function PerfumeInventory() {
     setProductForm({
       name: product.name,
       description: product.description || "",
+      brand: product.brand || "bottle",
+      bottle_size_ml: product.bottle_size_ml || 0,
       barcode: product.barcode || "",
       cost_price: product.cost_price || 0,
       price: product.price,
@@ -451,7 +563,7 @@ export default function PerfumeInventory() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
                       <div className="space-y-1">
                         <span className="text-sm text-muted-foreground">Cost Price</span>
                         <div className="text-lg font-semibold">
@@ -461,7 +573,13 @@ export default function PerfumeInventory() {
                       <div className="space-y-1">
                         <span className="text-sm text-muted-foreground">Retail Price</span>
                         <div className="text-lg font-semibold">
-                          {masterPerfume.price?.toLocaleString() || 0} UGX/ml
+                          {(masterPerfume.retail_price_per_ml || masterPerfume.price)?.toLocaleString() || 0} UGX/ml
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-sm text-muted-foreground">Wholesale Price</span>
+                        <div className="text-lg font-semibold">
+                          {masterPerfume.wholesale_price_per_ml?.toLocaleString() || 0} UGX/ml
                         </div>
                       </div>
                     </div>
@@ -484,6 +602,24 @@ export default function PerfumeInventory() {
                       >
                         <Edit className="w-5 h-5 mr-2" />
                         Configure Pricing
+                      </Button>
+                      <Button 
+                        onClick={() => setBottleSizePricingDialogOpen(true)}
+                        className="flex-1"
+                        size="lg"
+                        variant="outline"
+                      >
+                        <Package className="w-5 h-5 mr-2" />
+                        Bottle Sizes & Prices
+                      </Button>
+                      <Button 
+                        onClick={() => setBottleCostDialogOpen(true)}
+                        className="flex-1"
+                        size="lg"
+                        variant="outline"
+                      >
+                        <Edit className="w-5 h-5 mr-2" />
+                        Bottle Costs
                       </Button>
                     </div>
                   </CardContent>
@@ -523,9 +659,12 @@ export default function PerfumeInventory() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
                         <CardTitle className="text-lg">{product.name}</CardTitle>
-                        {product.sku && (
-                          <p className="text-sm text-muted-foreground mt-1">SKU: {product.sku}</p>
+                        {product.bottle_size_ml && product.bottle_size_ml > 0 && (
+                          <p className="text-sm text-muted-foreground mt-1">{product.bottle_size_ml} ml</p>
                         )}
+                        <Badge variant="secondary" className="mt-2 capitalize">
+                          {product.brand || "other"}
+                        </Badge>
                       </div>
                     </div>
                   </CardHeader>
@@ -540,7 +679,7 @@ export default function PerfumeInventory() {
                         <p className="font-semibold">{product.cost_price?.toLocaleString() || 0} UGX</p>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">Price:</span>
+                        <span className="text-muted-foreground">Selling Price:</span>
                         <p className="font-semibold">{product.price?.toLocaleString() || 0} UGX</p>
                       </div>
                       <div>
@@ -581,7 +720,7 @@ export default function PerfumeInventory() {
               ))}
             </div>
 
-            {shopProducts.length === 0 && !isLoadingProducts && (
+            {shopProducts.length === 0 && (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -596,32 +735,42 @@ export default function PerfumeInventory() {
         <Dialog open={restockDialogOpen} onOpenChange={setRestockDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Oil Perfume Stock</DialogTitle>
+              <DialogTitle>Add Stock to Oil Perfume</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               <div>
-                <Label htmlFor="restock-amount">Amount to Add (ml)</Label>
+                <Label>Current Stock</Label>
+                <p className="text-2xl font-bold text-primary">
+                  {masterPerfume?.total_ml?.toLocaleString() || 0} ml
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="amount">Amount to Add (ml)</Label>
                 <Input
-                  id="restock-amount"
+                  id="amount"
                   type="number"
                   value={restockAmount}
                   onChange={(e) => setRestockAmount(Number(e.target.value))}
-                  placeholder="Enter amount in ml"
+                  placeholder="Enter ml to add"
+                  min="0"
                 />
               </div>
-              <p className="text-sm text-muted-foreground">
-                Current stock: {masterPerfume?.total_ml?.toLocaleString() || 0} ml
-              </p>
+              {restockAmount > 0 && (
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground">New Total</p>
+                  <p className="text-xl font-bold">
+                    {((masterPerfume?.total_ml || 0) + restockAmount).toLocaleString()} ml
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setRestockDialogOpen(false)}>
-                Cancel
-              </Button>
+              <Button variant="outline" onClick={() => setRestockDialogOpen(false)}>Cancel</Button>
               <Button 
                 onClick={() => restockMutation.mutate({ amount: restockAmount })}
-                disabled={restockMutation.isPending || restockAmount <= 0}
+                disabled={restockAmount <= 0}
               >
-                {restockMutation.isPending ? "Adding..." : "Add Stock"}
+                Add Stock
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -633,131 +782,140 @@ export default function PerfumeInventory() {
             <DialogHeader>
               <DialogTitle>Configure Oil Perfume Pricing</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               <div>
-                <Label htmlFor="cost-price">Cost Price (UGX/ml)</Label>
+                <Label>Cost Price (per ml)</Label>
                 <Input
-                  id="cost-price"
                   type="number"
                   value={oilPerfumePricing.cost_price}
-                  onChange={(e) => setOilPerfumePricing({ ...oilPerfumePricing, cost_price: Number(e.target.value) })}
+                  onChange={(e) => setOilPerfumePricing({...oilPerfumePricing, cost_price: Number(e.target.value)})}
+                  placeholder="Cost price"
                 />
               </div>
               <div>
-                <Label htmlFor="retail-price">Retail Price (UGX/ml)</Label>
+                <Label>Retail Price (per ml)</Label>
                 <Input
-                  id="retail-price"
                   type="number"
                   value={oilPerfumePricing.retail_price_per_ml}
-                  onChange={(e) => setOilPerfumePricing({ ...oilPerfumePricing, retail_price_per_ml: Number(e.target.value) })}
+                  onChange={(e) => setOilPerfumePricing({...oilPerfumePricing, retail_price_per_ml: Number(e.target.value)})}
+                  placeholder="Retail price"
                 />
               </div>
               <div>
-                <Label htmlFor="min-stock">Reorder Level (ml)</Label>
+                <Label>Wholesale Price (per ml)</Label>
                 <Input
-                  id="min-stock"
+                  type="number"
+                  value={oilPerfumePricing.wholesale_price_per_ml}
+                  onChange={(e) => setOilPerfumePricing({...oilPerfumePricing, wholesale_price_per_ml: Number(e.target.value)})}
+                  placeholder="Wholesale price"
+                />
+              </div>
+              <div>
+                <Label>Reorder Level (ml)</Label>
+                <Input
                   type="number"
                   value={oilPerfumePricing.min_stock}
-                  onChange={(e) => setOilPerfumePricing({ ...oilPerfumePricing, min_stock: Number(e.target.value) })}
+                  onChange={(e) => setOilPerfumePricing({...oilPerfumePricing, min_stock: Number(e.target.value)})}
+                  placeholder="Reorder level"
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setPricingDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={() => updatePricingMutation.mutate()}
-                disabled={updatePricingMutation.isPending}
-              >
-                {updatePricingMutation.isPending ? "Saving..." : "Save Pricing"}
-              </Button>
+              <Button variant="outline" onClick={() => setPricingDialogOpen(false)}>Cancel</Button>
+              <Button onClick={() => updatePricingMutation.mutate()}>Save Pricing</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Product Dialog */}
         <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
+              <DialogTitle>{editingProduct ? 'Edit' : 'Add'} Shop Product</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-              <div>
-                <Label htmlFor="product-name">Product Name</Label>
-                <Input
-                  id="product-name"
-                  value={productForm.name}
-                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  placeholder="Enter product name"
-                />
-              </div>
-              <div>
-                <Label htmlFor="product-description">Description</Label>
-                <Textarea
-                  id="product-description"
-                  value={productForm.description}
-                  onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
-                  placeholder="Enter description"
-                />
-              </div>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="product-barcode">Barcode</Label>
+                <div className="col-span-2">
+                  <Label>Product Name *</Label>
                   <Input
-                    id="product-barcode"
-                    value={productForm.barcode}
-                    onChange={(e) => setProductForm({ ...productForm, barcode: e.target.value })}
-                    placeholder="Barcode"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({...productForm, name: e.target.value})}
+                    placeholder="e.g., 50ml Round Bottle"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="product-sku">SKU</Label>
+                  <Label>Category *</Label>
+                  <Select
+                    value={productForm.brand}
+                    onValueChange={(value) => setProductForm({...productForm, brand: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bottle">Bottle (Empty)</SelectItem>
+                      <SelectItem value="perfume">Branded Perfume</SelectItem>
+                      <SelectItem value="bag">Bag</SelectItem>
+                      <SelectItem value="packaging">Packaging</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Size (ml)</Label>
                   <Input
-                    id="product-sku"
-                    value={productForm.sku}
-                    onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
-                    placeholder="SKU"
+                    type="number"
+                    value={productForm.bottle_size_ml || ""}
+                    onChange={(e) => setProductForm({...productForm, bottle_size_ml: Number(e.target.value)})}
+                    placeholder="For bottles"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="product-cost">Cost Price</Label>
+                  <Label>Cost Price (UGX) *</Label>
                   <Input
-                    id="product-cost"
                     type="number"
                     value={productForm.cost_price}
-                    onChange={(e) => setProductForm({ ...productForm, cost_price: Number(e.target.value) })}
+                    onChange={(e) => setProductForm({...productForm, cost_price: Number(e.target.value)})}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="product-price">Selling Price</Label>
+                  <Label>Selling Price (UGX) *</Label>
                   <Input
-                    id="product-price"
                     type="number"
                     value={productForm.price}
-                    onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                    onChange={(e) => setProductForm({...productForm, price: Number(e.target.value)})}
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="product-stock">Current Stock</Label>
+                  <Label>SKU</Label>
                   <Input
-                    id="product-stock"
+                    value={productForm.sku}
+                    onChange={(e) => setProductForm({...productForm, sku: e.target.value})}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <Label>Barcode</Label>
+                  <Input
+                    value={productForm.barcode}
+                    onChange={(e) => setProductForm({...productForm, barcode: e.target.value})}
+                    placeholder="For barcode scanning"
+                  />
+                </div>
+                <div>
+                  <Label>Current Stock *</Label>
+                  <Input
                     type="number"
                     value={productForm.stock}
-                    onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
+                    onChange={(e) => setProductForm({...productForm, stock: Number(e.target.value)})}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="product-min-stock">Reorder Level</Label>
+                  <Label>Reorder Level *</Label>
                   <Input
-                    id="product-min-stock"
                     type="number"
                     value={productForm.min_stock}
-                    onChange={(e) => setProductForm({ ...productForm, min_stock: Number(e.target.value) })}
+                    onChange={(e) => setProductForm({...productForm, min_stock: Number(e.target.value)})}
                   />
                 </div>
               </div>
@@ -768,9 +926,178 @@ export default function PerfumeInventory() {
               </Button>
               <Button 
                 onClick={() => saveProductMutation.mutate()}
-                disabled={saveProductMutation.isPending || !productForm.name}
+                disabled={!productForm.name || productForm.cost_price < 0}
               >
-                {saveProductMutation.isPending ? "Saving..." : editingProduct ? "Update" : "Add Product"}
+                {editingProduct ? 'Update' : 'Add'} Product
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bottle Size Pricing Dialog */}
+        <Dialog open={bottleSizePricingDialogOpen} onOpenChange={setBottleSizePricingDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Configure Retail Bottle Size Pricing</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Set the selling price for each bottle size for retail customers.
+              </p>
+              <div className="space-y-3">
+                {bottleSizePricing.map((size, index) => (
+                  <Card key={index}>
+                    <CardContent className="p-4">
+                      <div className="grid grid-cols-3 gap-4 items-center">
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Bottle Size (ml)</Label>
+                          <Input
+                            type="number"
+                            value={size.ml}
+                            onChange={(e) => {
+                              const updated = [...bottleSizePricing];
+                              updated[index].ml = Number(e.target.value);
+                              setBottleSizePricing(updated);
+                            }}
+                            placeholder="ml"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Selling Price (UGX)</Label>
+                          <Input
+                            type="number"
+                            value={size.price}
+                            onChange={(e) => {
+                              const updated = [...bottleSizePricing];
+                              updated[index].price = Number(e.target.value);
+                              setBottleSizePricing(updated);
+                            }}
+                            placeholder="Price"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (bottleSizePricing.length > 1) {
+                                setBottleSizePricing(bottleSizePricing.filter((_, i) => i !== index));
+                              }
+                            }}
+                            disabled={bottleSizePricing.length === 1}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => setBottleSizePricing([...bottleSizePricing, { ml: 0, price: 0 }])}
+                  className="w-full"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Bottle Size
+                </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBottleSizePricingDialogOpen(false)}>Cancel</Button>
+              <Button onClick={() => updateBottleSizePricingMutation.mutate()}>
+                Save Pricing
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bottle Cost Configuration Dialog */}
+        <Dialog open={bottleCostDialogOpen} onOpenChange={setBottleCostDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Configure Bottle Costs for Retail Sales</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Set the cost of bottles based on size ranges. These costs will be deducted from revenue.
+              </p>
+              <div className="space-y-3">
+                {bottleCostRanges.map((range, index) => (
+                  <Card key={index}>
+                    <CardContent className="p-4">
+                      <div className="grid grid-cols-4 gap-4 items-center">
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Min Size (ml)</Label>
+                          <Input
+                            type="number"
+                            value={range.min}
+                            onChange={(e) => {
+                              const updated = [...bottleCostRanges];
+                              updated[index].min = Number(e.target.value);
+                              setBottleCostRanges(updated);
+                            }}
+                            placeholder="Min ml"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Max Size (ml)</Label>
+                          <Input
+                            type="number"
+                            value={range.max}
+                            onChange={(e) => {
+                              const updated = [...bottleCostRanges];
+                              updated[index].max = Number(e.target.value);
+                              setBottleCostRanges(updated);
+                            }}
+                            placeholder="Max ml"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Bottle Cost (UGX)</Label>
+                          <Input
+                            type="number"
+                            value={range.cost}
+                            onChange={(e) => {
+                              const updated = [...bottleCostRanges];
+                              updated[index].cost = Number(e.target.value);
+                              setBottleCostRanges(updated);
+                            }}
+                            placeholder="Cost"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (bottleCostRanges.length > 1) {
+                                setBottleCostRanges(bottleCostRanges.filter((_, i) => i !== index));
+                              }
+                            }}
+                            disabled={bottleCostRanges.length === 1}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => setBottleCostRanges([...bottleCostRanges, { min: 0, max: 0, cost: 0 }])}
+                  className="w-full"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Cost Range
+                </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBottleCostDialogOpen(false)}>Cancel</Button>
+              <Button onClick={() => updateBottleCostMutation.mutate()}>
+                Save Bottle Costs
               </Button>
             </DialogFooter>
           </DialogContent>
