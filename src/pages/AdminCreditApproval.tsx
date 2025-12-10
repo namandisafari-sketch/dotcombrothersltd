@@ -12,13 +12,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import { CheckCircle, XCircle, Clock, ArrowRightLeft, Filter } from "lucide-react";
+import type { Database } from "@/integrations/supabase/types";
+
+type CreditStatus = Database["public"]["Enums"]["credit_status"];
 
 const AdminCreditApproval = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<CreditStatus | "all">("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -252,7 +255,7 @@ const AdminCreditApproval = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label>Status</Label>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as CreditStatus | "all")}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
