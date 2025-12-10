@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,31 +29,35 @@ const Suppliers = () => {
   const { data: suppliers, isLoading } = useQuery({
     queryKey: ["suppliers"],
     queryFn: async () => {
-      const data = await localApi.suppliers.getAll();
-      return data;
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return data || [];
     },
   });
 
   const saveSupplierMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       if (editingSupplier) {
-        await localApi.suppliers.update(editingSupplier.id, data);
+        const { error } = await supabase
+          .from("suppliers")
+          .update(data)
+          .eq("id", editingSupplier.id);
+        if (error) throw error;
       } else {
-        await localApi.suppliers.create(data);
+        const { error } = await supabase
+          .from("suppliers")
+          .insert(data);
+        if (error) throw error;
       }
     },
     onSuccess: () => {
       toast.success(editingSupplier ? "Supplier updated" : "Supplier added");
       setIsDialogOpen(false);
       setEditingSupplier(null);
-      setFormData({
-        name: "",
-        contact_person: "",
-        phone: "",
-        email: "",
-        address: "",
-        notes: "",
-      });
+      setFormData({ name: "", contact_person: "", phone: "", email: "", address: "", notes: "" });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
     onError: (error: any) => {
@@ -63,7 +67,11 @@ const Suppliers = () => {
 
   const deleteSupplierMutation = useMutation({
     mutationFn: async (supplierId: string) => {
-      await localApi.suppliers.delete(supplierId);
+      const { error } = await supabase
+        .from("suppliers")
+        .delete()
+        .eq("id", supplierId);
+      if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Supplier deleted");
@@ -107,14 +115,7 @@ const Suppliers = () => {
       return;
     }
     setEditingSupplier(null);
-    setFormData({
-      name: "",
-      contact_person: "",
-      phone: "",
-      email: "",
-      address: "",
-      notes: "",
-    });
+    setFormData({ name: "", contact_person: "", phone: "", email: "", address: "", notes: "" });
     setIsDialogOpen(true);
   };
 
@@ -154,18 +155,10 @@ const Suppliers = () => {
                     </div>
                     {isAdmin && (
                       <div className="flex gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleEdit(supplier)}
-                        >
+                        <Button size="icon" variant="ghost" onClick={() => handleEdit(supplier)}>
                           <Pencil className="w-4 h-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleDelete(supplier.id)}
-                        >
+                        <Button size="icon" variant="ghost" onClick={() => handleDelete(supplier.id)}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
@@ -221,7 +214,6 @@ const Suppliers = () => {
           </Card>
         )}
 
-        {/* Add/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -283,10 +275,7 @@ const Suppliers = () => {
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                onClick={() => saveSupplierMutation.mutate(formData)}
-                disabled={!formData.name}
-              >
+              <Button onClick={() => saveSupplierMutation.mutate(formData)} disabled={!formData.name}>
                 {editingSupplier ? "Update Supplier" : "Add Supplier"}
               </Button>
             </DialogFooter>

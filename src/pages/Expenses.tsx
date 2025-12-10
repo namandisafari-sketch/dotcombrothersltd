@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
@@ -27,7 +26,12 @@ const Expenses = () => {
     queryKey: ["expenses", departmentId],
     queryFn: async () => {
       if (!departmentId) return [];
-      const data = await localApi.expenses.getAll({ departmentId });
+      const { data, error } = await supabase
+        .from("expenses")
+        .select("*")
+        .eq("department_id", departmentId)
+        .order("expense_date", { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!departmentId,
@@ -35,17 +39,19 @@ const Expenses = () => {
 
   const createExpenseMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      // Validate input before saving
       try {
         const validated = expenseSchema.parse(data);
         
-        await localApi.expenses.create({
-          description: validated.description,
-          category: validated.category,
-          amount: parseFloat(data.amount),
-          date: validated.date,
-          department_id: departmentId,
-        });
+        const { error } = await supabase
+          .from("expenses")
+          .insert({
+            description: validated.description,
+            category: validated.category,
+            amount: parseFloat(data.amount),
+            expense_date: validated.date,
+            department_id: departmentId,
+          });
+        if (error) throw error;
       } catch (validationError: any) {
         if (validationError.errors) {
           throw new Error(validationError.errors[0].message);
@@ -170,7 +176,7 @@ const Expenses = () => {
                   {expenses?.map((expense) => (
                     <TableRow key={expense.id}>
                       <TableCell>
-                        {format(new Date(expense.date), "MMM dd, yyyy")}
+                        {format(new Date(expense.expense_date || expense.created_at), "MMM dd, yyyy")}
                       </TableCell>
                       <TableCell>{expense.description}</TableCell>
                       <TableCell>

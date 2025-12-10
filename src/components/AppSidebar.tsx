@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useQuery } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard,
   Package,
@@ -61,8 +61,13 @@ export function AppSidebar() {
     queryFn: async () => {
       if (!user?.id) return [];
       try {
-        const data = await localApi.users.getNavPermissions(user.id);
-        return data?.map((p: any) => p.nav_path) || [];
+        const { data, error } = await supabase
+          .from("user_roles")
+          .select("nav_permissions")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+        return data?.nav_permissions || [];
       } catch (error) {
         console.error("Error fetching nav permissions:", error);
         return [];
@@ -73,15 +78,28 @@ export function AppSidebar() {
 
   const { data: departments } = useQuery({
     queryKey: ["departments"],
-    queryFn: () => localApi.departments.getAll(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const { data: userDepartment } = useQuery({
     queryKey: ["user-department", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return null;
-      const departments = await localApi.departments.getAll();
-      return departments.find((d: any) => d.id === selectedDepartmentId) || null;
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("id", selectedDepartmentId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
     },
     enabled: !!selectedDepartmentId,
   });
@@ -134,100 +152,48 @@ export function AppSidebar() {
   const isMobileMoneyDepartment = userDepartment?.is_mobile_money === true;
 
   let navItems = allNavItems.filter((item) => {
-    // Admins see everything
-    if (isAdmin) {
-      return true;
-    }
-    
-    // Check admin-only and moderator-only items
+    if (isAdmin) return true;
     if (item.adminOnly || item.moderatorOnly) return false;
     
-    // Perfume departments should NOT see regular operational pages
-    // They only use perfume-specific pages
     if (isPerfumeDepartment) {
-      // Hide all regular operational pages for perfume departments EXCEPT those with explicit permissions
       const regularPages = ["/dashboard", "/inventory", "/sales", "/sales-history", "/customers", 
                             "/services", "/appointments", "/barcode-generator", "/reports", 
                             "/inbox", "/internal-usage"];
-      if (regularPages.includes(item.path)) {
-        return false;
-      }
-      // Allow pages with explicit permissions (including credits, expenses, reconcile)
+      if (regularPages.includes(item.path)) return false;
       return userNavPermissions?.includes(item.path) || false;
     }
     
-    // Mobile money departments should NOT see regular operational pages
-    // They only use the mobile money POS page for everything
     if (isMobileMoneyDepartment) {
-      const mobileMoneyOnlyPages = ["/mobile-money", "/mobile-money-dashboard", "/suspended-revenue", "/reconcile", "/expenses"];
-      if (item.departmentTypes?.includes("mobile_money")) {
-        return true; // Show mobile money specific pages
-      }
-      // Hide regular operational pages for mobile money departments
+      if (item.departmentTypes?.includes("mobile_money")) return true;
       const regularPages = ["/inventory", "/sales", "/sales-history", "/services", "/reports"];
-      if (regularPages.includes(item.path)) {
-        return false;
-      }
-      // Allow other pages with explicit permissions
+      if (regularPages.includes(item.path)) return false;
       return userNavPermissions?.includes(item.path) || false;
     }
     
-    // Check department-specific items for non-mobile-money departments
     if (item.departmentTypes) {
-      if (item.departmentTypes.includes("perfume") && isPerfumeDepartment) {
-        return true;
-      }
-      // If department doesn't match, deny access
+      if (item.departmentTypes.includes("perfume") && isPerfumeDepartment) return true;
       return false;
     }
     
-    // For non-department-specific items, allow access with explicit permissions
-    // OR allow basic operational pages for all users in departments
     const basicPages = ["/inventory", "/sales", "/sales-history", "/customers", "/services", 
                         "/appointments", "/barcode-generator", "/credits", 
                         "/inbox", "/internal-usage", "/reports"];
+    if (basicPages.includes(item.path)) return true;
     
-    if (basicPages.includes(item.path)) {
-      return true; // All department users can access basic operational pages
-    }
-    
-    // For other pages, check explicit permissions
-    if (!userNavPermissions || userNavPermissions.length === 0) {
-      return false;
-    }
-    
+    if (!userNavPermissions || userNavPermissions.length === 0) return false;
     return userNavPermissions.includes(item.path);
   });
 
   const perfumeItems = perfumeNavItems.filter((item) => {
-    // Admins see everything
-    if (isAdmin) {
-      return true;
-    }
-    
-    // Non-admins in perfume department get automatic access to perfume items
-    if (isPerfumeDepartment) {
-      return true;
-    }
-    
+    if (isAdmin) return true;
+    if (isPerfumeDepartment) return true;
     return false;
   });
 
   const adminMenuItems = adminItems.filter((item) => {
-    // Admins see everything
-    if (isAdmin) {
-      return true;
-    }
-    
-    // Non-admins can't see admin-only items
+    if (isAdmin) return true;
     if (item.adminOnly) return false;
-    
-    // For non-admins: if no permissions set, hide all items
-    if (!userNavPermissions || userNavPermissions.length === 0) {
-      return false;
-    }
-    
-    // For non-admins: only show items in their permissions
+    if (!userNavPermissions || userNavPermissions.length === 0) return false;
     return userNavPermissions.includes(item.path);
   });
 
@@ -250,7 +216,6 @@ export function AppSidebar() {
       <SidebarContent className="px-2 pt-2">
         {!isCollapsed ? (
           <div className="space-y-6">
-            {/* Main Menu Section */}
             <div className="space-y-1">
               <h3 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                 Main Menu
@@ -273,7 +238,6 @@ export function AppSidebar() {
               ))}
             </div>
 
-            {/* Perfume Section */}
             {perfumeItems.length > 0 && (
               <div className="space-y-1">
                 <h3 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
@@ -298,7 +262,6 @@ export function AppSidebar() {
               </div>
             )}
 
-            {/* Admin Section */}
             {adminMenuItems.length > 0 && (
               <div className="space-y-1">
                 <h3 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">

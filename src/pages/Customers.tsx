@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { localApi } from "@/lib/localApi";
+import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
@@ -32,8 +32,13 @@ const Customers = () => {
     queryKey: ["customers", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      const data = await localApi.customers.getAll();
-      return data.filter((c: any) => c.department_id === selectedDepartmentId);
+      const { data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("department_id", selectedDepartmentId)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
   });
@@ -50,9 +55,16 @@ const Customers = () => {
       };
       
       if (editingCustomer) {
-        await localApi.customers.update(editingCustomer.id, customerData);
+        const { error } = await supabase
+          .from("customers")
+          .update(customerData)
+          .eq("id", editingCustomer.id);
+        if (error) throw error;
       } else {
-        await localApi.customers.create(customerData);
+        const { error } = await supabase
+          .from("customers")
+          .insert(customerData);
+        if (error) throw error;
       }
     },
     onSuccess: () => {
@@ -62,9 +74,9 @@ const Customers = () => {
       setFormData({ name: "", phone: "", email: "", address: "" });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
     },
-  onError: (error: any) => {
-    toast.error(error.message || "Failed to save customer");
-  },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to save customer");
+    },
   });
 
   const handleEdit = (customer: any) => {
@@ -101,61 +113,61 @@ const Customers = () => {
                   Add Customer
                 </Button>
               </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editingCustomer ? "Edit Customer" : "Add New Customer"}
-                </DialogTitle>
-              </DialogHeader>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingCustomer ? "Edit Customer" : "Add New Customer"}
+                  </DialogTitle>
+                </DialogHeader>
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Customer Name *</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Full name"
-                  />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Customer Name *</Label>
+                    <Input
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Full name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Phone Number</Label>
+                    <Input
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+256..."
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="email@example.com"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Address</Label>
+                    <Input
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      placeholder="Physical address"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Phone Number</Label>
-                  <Input
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+256..."
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="email@example.com"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Address</Label>
-                  <Input
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Physical address"
-                  />
-                </div>
-              </div>
-
-              <Button
-                className="w-full mt-4"
-                onClick={() => saveCustomerMutation.mutate(formData)}
-                disabled={!formData.name}
-              >
-                {editingCustomer ? "Update Customer" : "Add Customer"}
-              </Button>
-            </DialogContent>
-          </Dialog>
+                <Button
+                  className="w-full mt-4"
+                  onClick={() => saveCustomerMutation.mutate(formData)}
+                  disabled={!formData.name}
+                >
+                  {editingCustomer ? "Update Customer" : "Add Customer"}
+                </Button>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -190,7 +202,7 @@ const Customers = () => {
                       <div className="text-right">
                         <p className="text-sm text-muted-foreground">Balance</p>
                         <p className="font-bold">
-                          UGX {Number(customer.balance).toLocaleString()}
+                          UGX {Number(customer.balance || 0).toLocaleString()}
                         </p>
                       </div>
                       <Button size="sm" variant="outline" onClick={() => handleEdit(customer)}>
