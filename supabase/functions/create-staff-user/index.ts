@@ -73,7 +73,15 @@ Deno.serve(async (req) => {
       },
     });
 
-    if (authError) throw authError;
+    if (authError) {
+      if (authError.code === 'email_exists') {
+        return new Response(
+          JSON.stringify({ error: 'A user with this email already exists.' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+      throw authError;
+    }
     if (!authData.user) throw new Error('Failed to create user');
 
     console.log(`User created with ID: ${authData.user.id}`);
