@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { printReceipt } from "@/utils/receiptPrinter";
+import { reduceStock } from "@/utils/stockManagement";
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,8 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ShoppingCart, Trash2, Plus, Sparkles, Barcode } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
+import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
+import { ReceiptEditDialog } from "@/components/ReceiptEditDialog";
+import { PerfumeRefillDialog } from "@/components/inventory/PerfumeRefillDialog";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useDemoMode } from "@/contexts/DemoModeContext";
 
@@ -24,7 +30,10 @@ interface CartItem {
   scentMixture?: string;
   bottleCost?: number;
   totalMl?: number;
+  trackingType?: string;
   subtotal: number;
+  selectedScents?: Array<{ scent: string; ml: number }>;
+  pricePerMl?: number;
 }
 
 const PerfumePOS = () => {
@@ -32,26 +41,56 @@ const PerfumePOS = () => {
   const { selectedDepartmentId } = useDepartment();
   const { isDemoMode, showDemoWarning } = useDemoMode();
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "mobile_money" | "credit">("cash");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [cashierName, setCashierName] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<string>("");
   const [customerName, setCustomerName] = useState<string>("Walk-in");
+  const [customerEmail, setCustomerEmail] = useState<string>("");
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [currentReceiptData, setCurrentReceiptData] = useState<any>(null);
+  const [showPerfumeRefillDialog, setShowPerfumeRefillDialog] = useState(false);
   const [barcode, setBarcode] = useState("");
+  const [showNewCustomerDialog, setShowNewCustomerDialog] = useState(false);
+  const [newCustomerData, setNewCustomerData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+  });
 
-  // Fetch perfume products
+  // Fetch perfume products (exclude Oil Perfume master stock)
   const { data: perfumeProducts = [] } = useQuery({
-    queryKey: ["perfume-products", selectedDepartmentId],
+    queryKey: ["perfume-products", selectedDepartmentId, barcode],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*")
         .eq("department_id", selectedDepartmentId)
-        .eq("tracking_type", "ml")
-        .eq("is_active", true)
-        .neq("name", "Oil Perfume")
-        .order("name");
+        .eq("is_archived", false)
+        .neq("name", "Oil Perfume"); // Exclude master stock - it's capital, not a product
       
+      if (barcode) {
+        query = query.or(`barcode.eq.${barcode},internal_barcode.eq.${barcode}`);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
+      
+      // Auto-open refill dialog if barcode matches exactly one product
+      if (barcode && data && data.length === 1) {
+        setSelectedCustomerId(selectedCustomer);
+        setShowPerfumeRefillDialog(true);
+        toast.success(`Found: ${data[0].name}`);
+        setBarcode(""); // Clear barcode after successful match
+      } else if (barcode && data && data.length === 0) {
+        toast.error("No product found with this barcode");
+        setBarcode("");
+      } else if (barcode && data && data.length > 1) {
+        toast.info(`Found ${data.length} products. Please select one.`);
+      }
+      
       return data || [];
     },
     enabled: !!selectedDepartmentId,
@@ -72,12 +111,12 @@ const PerfumePOS = () => {
     enabled: !!selectedDepartmentId,
   });
 
-  // Fetch settings
-  const { data: settings } = useQuery({
-    queryKey: ["settings", selectedDepartmentId],
+  // Fetch department settings
+  const { data: departmentSettings } = useQuery({
+    queryKey: ["department-settings", selectedDepartmentId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("settings")
+        .from("department_settings")
         .select("*")
         .eq("department_id", selectedDepartmentId)
         .maybeSingle();
@@ -85,6 +124,19 @@ const PerfumePOS = () => {
       return data;
     },
     enabled: !!selectedDepartmentId,
+  });
+
+  // Fetch global settings as fallback
+  const { data: globalSettings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("settings")
+        .select("*")
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
   });
 
   // Fetch current user profile for cashier name
@@ -98,31 +150,73 @@ const PerfumePOS = () => {
         .from("profiles")
         .select("full_name")
         .eq("id", user.id)
-        .maybeSingle();
+        .single();
       
       if (error) throw error;
       return data;
     },
   });
 
+  // Auto-set cashier name from user profile
   useEffect(() => {
     if (userProfile?.full_name && !cashierName) {
       setCashierName(userProfile.full_name);
     }
   }, [userProfile, cashierName]);
 
-  const addProductToCart = (product: any) => {
-    const cartItem: CartItem = {
-      id: `${product.id}-${Date.now()}`,
-      name: product.name,
-      price: product.price,
-      quantity: 1,
-      type: "perfume",
-      productId: product.id,
-      subtotal: product.price,
-    };
-    setCart(prev => [...prev, cartItem]);
-    toast.success(`Added ${product.name} to cart`);
+  // Create new customer mutation
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData: typeof newCustomerData) => {
+      if (!customerData.name.trim()) {
+        throw new Error("Customer name is required");
+      }
+
+      const { data, error } = await supabase
+        .from("customers")
+        .insert({
+          name: customerData.name.trim(),
+          phone: customerData.phone.trim() || null,
+          email: customerData.email.trim() || null,
+          address: customerData.address.trim() || null,
+          department_id: selectedDepartmentId,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (newCustomer) => {
+      toast.success(`Customer "${newCustomer.name}" created successfully!`);
+      queryClient.invalidateQueries({ queryKey: ["customers", selectedDepartmentId] });
+      
+      // Auto-select the newly created customer
+      setSelectedCustomer(newCustomer.id);
+      setCustomerName(newCustomer.name);
+      if (newCustomer.email) {
+        setCustomerEmail(newCustomer.email);
+      }
+      
+      // Close dialog and reset form
+      setShowNewCustomerDialog(false);
+      setNewCustomerData({
+        name: "",
+        phone: "",
+        email: "",
+        address: "",
+      });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to create customer");
+    },
+  });
+
+  const handleCreateCustomer = () => {
+    createCustomerMutation.mutate(newCustomerData);
+  };
+
+  const addToCart = (item: CartItem) => {
+    setCart(prev => [...prev, item]);
   };
 
   const removeFromCart = (itemId: string) => {
@@ -147,93 +241,233 @@ const PerfumePOS = () => {
         throw new Error("Cart is empty");
       }
 
-      const saleNumber = `POS-${Date.now()}`;
+      // Use globalSettings for business info (department_settings doesn't have those fields)
+      const settings = globalSettings;
+      
+      let qrCodeUrl;
+      if (settings?.whatsapp_number) {
+        try {
+          const QRCode = (await import('qrcode')).default;
+          const message = "Hello! I'd like to connect.";
+          const whatsappUrl = `https://wa.me/${settings.whatsapp_number.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
+          qrCodeUrl = await QRCode.toDataURL(whatsappUrl, { width: 200, margin: 1 });
+        } catch (err) {
+          console.error('Failed to generate QR code:', err);
+        }
+      }
+
+      // Generate proper sequential receipt/invoice number
+      const { data: receiptNumber, error: receiptError } = await supabase.rpc('generate_receipt_number');
+      
+      if (receiptError) {
+        throw new Error("Failed to generate receipt number: " + receiptError.message);
+      }
+      
+      // Check if it's a wholesale sale (invoice)
+      const hasWholesaleItems = cart.some(item => item.customerType === "wholesale");
+      const invoiceNumber = hasWholesaleItems ? receiptNumber.replace('RCP', 'INV') : null;
+
+      // Transform cart items to match receipt format
+      const receiptItems = cart.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        subtotal: item.subtotal,
+        scentMixture: item.scentMixture,
+        packingCost: item.bottleCost,
+        isPerfumeRefill: item.type === "perfume",
+        customerType: item.customerType,
+        scentBreakdown: item.selectedScents,
+        totalMl: item.totalMl,
+        pricePerMl: item.pricePerMl,
+      }));
+
+      // Create properly formatted receipt data
+      const receiptData = {
+        receiptNumber: receiptNumber,
+        invoiceNumber: invoiceNumber,
+        items: receiptItems,
+        subtotal: subtotal,
+        tax: 0,
+        total: total,
+        paymentMethod: paymentMethod.toUpperCase(),
+        date: new Date().toLocaleString(),
+        cashierName: cashierName,
+        customerName: customerName,
+        businessInfo: {
+          name: settings?.business_name || "Business Name",
+          address: settings?.business_address || "Kasangati opp Kasangati Police Station",
+          phone: settings?.business_phone || "+256745368426",
+          email: settings?.business_email || "",
+          logo: settings?.logo_url || "",
+          whatsapp: settings?.whatsapp_number || "+256745368426",
+          website: settings?.website || "",
+        },
+        seasonalRemark: settings?.seasonal_remark || "",
+        qrCodeUrl,
+      };
+
+      // Sale data for database
+      const mockSaleData = {
+        id: `sale_${Date.now()}`,
+        department_id: selectedDepartmentId,
+        cashier_name: cashierName,
+        customer_id: selectedCustomerId || null,
+        customer_name: customerName,
+        payment_method: paymentMethod,
+        subtotal: subtotal,
+        total: total,
+        amount_paid: subtotal,
+        change: 0,
+        notes: "",
+        items: cart,
+        created_at: new Date().toISOString(),
+        receiptData: receiptData,
+      };
+
+      const stockResult = await reduceStock(cart, selectedDepartmentId, isDemoMode);
+      if (!stockResult.success) {
+        throw new Error("Failed to reduce stock: " + stockResult.error);
+      }
 
       if (isDemoMode) {
         showDemoWarning();
+        
+        setCurrentReceiptData({
+          ...mockSaleData.receiptData,
+          isInvoice: hasWholesaleItems,
+        });
+        
+        setShowReceiptDialog(true);
         setCart([]);
-        return { id: 'demo', sale_number: saleNumber };
+        return mockSaleData;
       }
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-
-      // Create sale
-      const { data: sale, error: saleError } = await supabase
+      const { data: insertedSale, error: saleError } = await supabase
         .from("sales")
         .insert([{
-          department_id: selectedDepartmentId,
-          cashier_id: user?.id || null,
-          customer_id: selectedCustomerId,
-          payment_method: paymentMethod,
-          subtotal: subtotal,
-          total: total,
-          sale_number: saleNumber,
-          status: 'completed' as const,
+          department_id: mockSaleData.department_id,
+          cashier_name: mockSaleData.cashier_name,
+          customer_id: mockSaleData.customer_id,
+          payment_method: mockSaleData.payment_method as "cash" | "card" | "mobile_money" | "credit",
+          subtotal: mockSaleData.subtotal,
+          total: mockSaleData.total,
+          amount_paid: mockSaleData.amount_paid,
+          change_amount: mockSaleData.change,
+          receipt_number: receiptNumber,
+          invoice_number: invoiceNumber,
+          is_invoice: hasWholesaleItems,
+          remarks: mockSaleData.notes,
+          sale_number: receiptNumber,
         }])
         .select()
         .single();
 
       if (saleError) {
+        console.error("Failed to insert sale:", saleError);
         throw new Error("Failed to save sale: " + saleError.message);
       }
 
-      // Create sale items
-      const saleItems = cart.map(item => ({
-        sale_id: sale.id,
-        product_id: item.productId || null,
+      // Get master perfume product ID for scent mixtures
+      const { data: masterPerfumeId, error: masterError } = await supabase
+        .rpc('get_or_create_master_perfume');
+      
+      if (masterError) {
+        console.error("Failed to get master perfume product:", masterError);
+        throw new Error("Failed to get master perfume product: " + masterError.message);
+      }
+
+      const saleItemsData = cart.map((item) => ({
+        sale_id: insertedSale.id,
+        product_id: item.scentMixture ? masterPerfumeId : (item.productId || null),
+        service_id: null,
+        item_name: item.name,
         name: item.name,
-        quantity: item.quantity,
+        quantity: item.type === "perfume" && item.totalMl ? item.totalMl : item.quantity,
         unit_price: item.price,
         total: item.subtotal,
-        ml_amount: item.totalMl || null,
+        customer_type: item.customerType || null,
+        scent_mixture: item.scentMixture || null,
+        bottle_cost: item.bottleCost || null,
       }));
 
       const { error: itemsError } = await supabase
         .from("sale_items")
-        .insert(saleItems);
+        .insert(saleItemsData);
 
       if (itemsError) {
+        console.error("Failed to insert sale items:", itemsError);
         throw new Error("Failed to save sale items: " + itemsError.message);
       }
 
-      // Update stock for products - fetch fresh stock values from database
-      for (const item of cart) {
-        if (item.productId) {
-          // Fetch current stock from database to avoid stale data issues
-          const { data: currentProduct, error: fetchError } = await supabase
-            .from("products")
-            .select("stock, total_ml, tracking_type")
-            .eq("id", item.productId)
-            .single();
+      // Update receipt data with actual receipt number
+      mockSaleData.receiptData.receiptNumber = insertedSale.receipt_number;
+      mockSaleData.receiptData.invoiceNumber = insertedSale.invoice_number;
+      
+      // Send invoice email if wholesale and email is provided
+      if (hasWholesaleItems && customerEmail) {
+        try {
+          const { generateInvoiceHTML } = await import("@/utils/invoicePrinter");
+          const invoiceData = {
+            invoiceNumber: insertedSale.invoice_number || insertedSale.receipt_number,
+            items: receiptItems,
+            subtotal: subtotal,
+            tax: 0,
+            total: total,
+            paymentMethod: paymentMethod.toUpperCase(),
+            date: new Date().toLocaleString(),
+            cashierName: cashierName,
+            customerName: customerName,
+            customerPhone: customerEmail,
+            departmentName: "Perfume Department",
+            businessInfo: mockSaleData.receiptData.businessInfo,
+            paymentTerms: "Payment due within 30 days",
+            qrCodeUrl,
+          };
           
-          if (fetchError || !currentProduct) {
-            console.error("Failed to fetch product for stock update:", fetchError);
-            continue;
+          const invoiceHTML = generateInvoiceHTML(invoiceData);
+
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            await supabase.functions.invoke("send-invoice-email", {
+              body: {
+                customerEmail: customerEmail,
+                customerName: customerName,
+                invoiceHTML: invoiceHTML,
+                invoiceNumber: insertedSale.invoice_number || insertedSale.receipt_number,
+                total: total,
+              },
+            });
+            toast.success("Invoice sent to customer email!");
           }
-          
-          if (currentProduct.tracking_type === 'ml' && item.totalMl) {
-            const newMl = Math.max(0, (currentProduct.total_ml || 0) - item.totalMl);
-            await supabase
-              .from("products")
-              .update({ total_ml: newMl })
-              .eq("id", item.productId);
-          } else {
-            const newStock = Math.max(0, (currentProduct.stock || 0) - item.quantity);
-            await supabase
-              .from("products")
-              .update({ stock: newStock })
-              .eq("id", item.productId);
-          }
+        } catch (emailError) {
+          console.error("Failed to send invoice email:", emailError);
+          toast.error("Sale completed but invoice email failed to send");
         }
       }
 
-      return sale;
+      // Set receipt data based on sale type
+      if (hasWholesaleItems) {
+        setCurrentReceiptData({
+          ...mockSaleData.receiptData,
+          isInvoice: true,
+        });
+      } else {
+        setCurrentReceiptData(mockSaleData.receiptData);
+      }
+
+      return mockSaleData;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["perfume-today-revenue"] });
+      queryClient.invalidateQueries({ queryKey: ["perfume-today-sales-count"] });
+      queryClient.invalidateQueries({ queryKey: ["perfume-recent-sales"] });
+      queryClient.invalidateQueries({ queryKey: ["perfume-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["popular-scents"] });
+      queryClient.invalidateQueries({ queryKey: ["perfume-low-stock"] });
+      
       toast.success("Sale completed successfully!");
+      setShowReceiptDialog(true);
       setCart([]);
       setPaymentMethod("cash");
     },
@@ -242,214 +476,387 @@ const PerfumePOS = () => {
     },
   });
 
-  const handleBarcodeSearch = () => {
-    if (!barcode.trim()) return;
-    
-    const product = perfumeProducts.find(
-      p => p.barcode === barcode || p.sku === barcode
-    );
-    
-    if (product) {
-      addProductToCart(product);
-      setBarcode("");
-    } else {
-      toast.error("Product not found with this barcode");
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
-      <Navigation />
+    <>
+      <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
+        <Navigation />
 
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
-        <div className="mb-6">
-          <h2 className="text-2xl sm:text-3xl font-bold">Perfume Point of Sale</h2>
-          <p className="text-sm sm:text-base text-muted-foreground">
-            Create custom perfume blends and process sales
-          </p>
-        </div>
+        <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
+          <div className="mb-6">
+            <h2 className="text-2xl sm:text-3xl font-bold">Perfume Point of Sale</h2>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Create custom perfume blends and process sales
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-          {/* Product Selection */}
-          <div className="lg:col-span-2 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  Add Products
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+            {/* Perfume Creation Area */}
+            <div className="lg:col-span-2 space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5" />
+                    Create Perfume Blend
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="relative">
                     <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       placeholder="Scan or enter barcode..."
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          handleBarcodeSearch();
+                        if (e.key === "Enter" && barcode) {
+                          queryClient.invalidateQueries({ queryKey: ["perfume-products"] });
                         }
                       }}
                       className="pl-10"
+                      autoFocus
                     />
                   </div>
-                  <Button onClick={handleBarcodeSearch}>
-                    Search
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {perfumeProducts.slice(0, 9).map((product) => (
-                    <Button
-                      key={product.id}
-                      variant="outline"
-                      className="h-auto py-3 flex flex-col items-start"
-                      onClick={() => addProductToCart(product)}
-                    >
-                      <span className="font-medium text-sm">{product.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {product.price?.toLocaleString()} UGX
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Shopping Cart */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5" />
-                  Cart ({cart.length} items)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {cart.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    Cart is empty. Add products to continue.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {cart.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                      >
-                        <div className="flex-1">
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {item.price.toLocaleString()} UGX x {item.quantity}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)}
-                            className="w-16 text-center"
-                          />
-                          <p className="font-semibold w-24 text-right">
-                            {item.subtotal.toLocaleString()} UGX
-                          </p>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeFromCart(item.id)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Checkout Panel */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Checkout</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Customer</Label>
-                  <Select
-                    value={selectedCustomerId || "walk-in"}
-                    onValueChange={(value) => {
-                      if (value === "walk-in") {
-                        setSelectedCustomerId(null);
-                        setCustomerName("Walk-in");
-                      } else {
-                        setSelectedCustomerId(value);
-                        const customer = customers.find(c => c.id === value);
-                        setCustomerName(customer?.name || "Walk-in");
-                      }
+                  
+                  <Button
+                    onClick={() => {
+                      setSelectedCustomerId(selectedCustomer);
+                      setShowPerfumeRefillDialog(true);
                     }}
+                    className="w-full"
+                    size="lg"
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="walk-in">Walk-in Customer</SelectItem>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </SelectItem>
+                    <Plus className="w-5 h-5 mr-2" />
+                    Add Perfume to Cart
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Branded Perfumes */}
+              {perfumeProducts.filter(p => p.tracking_type === 'quantity').length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Package className="w-5 h-5" />
+                      Branded Perfumes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 max-h-[400px] overflow-y-auto">
+                    {perfumeProducts.filter(p => p.tracking_type === 'quantity').map((product) => {
+                      const pricingTiers = product.pricing_tiers as { retail?: number; wholesale?: number } | null;
+                      const retailPrice = pricingTiers?.retail || product.selling_price || product.price;
+                      const wholesalePrice = pricingTiers?.wholesale || ((product.selling_price || product.price) * 0.8);
+                      const currentStock = product.current_stock || product.stock || 0;
+                      
+                      return (
+                        <div key={product.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+                          <div className="flex-1">
+                            <p className="font-medium">{product.name}</p>
+                            <div className="flex gap-2 mt-1 flex-wrap">
+                              <Badge variant="secondary" className="text-xs">
+                                {currentStock} in stock
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                Retail: UGX {retailPrice?.toLocaleString()}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                Wholesale: UGX {wholesalePrice?.toLocaleString()}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                if (currentStock <= 0) {
+                                  toast.error(`${product.name} is out of stock`);
+                                  return;
+                                }
+                                addToCart({
+                                  id: `branded-retail-${product.id}-${Date.now()}`,
+                                  name: product.name,
+                                  price: retailPrice,
+                                  quantity: 1,
+                                  type: "shop_product",
+                                  productId: product.id,
+                                  customerType: "retail",
+                                  subtotal: retailPrice,
+                                  trackingType: "quantity",
+                                });
+                                toast.success(`${product.name} (Retail) added to cart`);
+                              }}
+                              disabled={currentStock <= 0}
+                            >
+                              <ShoppingBag className="w-4 h-4 mr-1" />
+                              Retail
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                if (currentStock <= 0) {
+                                  toast.error(`${product.name} is out of stock`);
+                                  return;
+                                }
+                                addToCart({
+                                  id: `branded-wholesale-${product.id}-${Date.now()}`,
+                                  name: product.name,
+                                  price: wholesalePrice,
+                                  quantity: 1,
+                                  type: "shop_product",
+                                  productId: product.id,
+                                  customerType: "wholesale",
+                                  subtotal: wholesalePrice,
+                                  trackingType: "quantity",
+                                });
+                                toast.success(`${product.name} (Wholesale) added to cart`);
+                              }}
+                              disabled={currentStock <= 0}
+                            >
+                              <Package className="w-4 h-4 mr-1" />
+                              Wholesale
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Shopping Cart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ShoppingCart className="w-5 h-5" />
+                    Shopping Cart ({cart.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {cart.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      Cart is empty. Add perfume blends to get started.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {cart.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                          <div className="flex-1">
+                            <p className="font-medium">{item.name}</p>
+                            {item.scentMixture && (
+                              <p className="text-sm text-muted-foreground">{item.scentMixture}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline">{item.customerType}</Badge>
+                              {item.totalMl && (
+                                <Badge variant="secondary">{item.totalMl}ml</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="font-bold">UGX {item.price.toLocaleString()}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Qty: {item.quantity}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeFromCart(item.id)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-                <div>
-                  <Label>Payment Method</Label>
-                  <Select
-                    value={paymentMethod}
-                    onValueChange={(value: "cash" | "card" | "mobile_money" | "credit") => setPaymentMethod(value)}
+            {/* Payment Section */}
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Payment Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label>Customer Name</Label>
+                    <Input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Enter customer name"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Customer Email (for wholesale invoices)</Label>
+                    <Input
+                      type="email"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder="customer@email.com"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Linked Customer (Optional)</Label>
+                    <div className="flex gap-2">
+                      <Select value={selectedCustomer} onValueChange={(value) => {
+                        setSelectedCustomer(value);
+                        const customer = customers.find(c => c.id === value);
+                        if (customer) {
+                          setCustomerName(customer.name);
+                          if (customer.email) setCustomerEmail(customer.email);
+                        }
+                      }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select customer to see scent history" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {customers.map((customer) => (
+                            <SelectItem key={customer.id} value={customer.id}>
+                              {customer.name} {customer.phone ? `(${customer.phone})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button 
+                        type="button"
+                        variant="outline" 
+                        size="icon"
+                        onClick={() => setShowNewCustomerDialog(true)}
+                        title="Add New Customer"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Payment Method</Label>
+                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                        <SelectItem value="card">Card</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="pt-4 border-t space-y-2">
+                    <div className="flex justify-between text-lg font-bold">
+                      <span>Total:</span>
+                      <span>UGX {total.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() => completeSaleMutation.mutate()}
+                    disabled={cart.length === 0 || completeSaleMutation.isPending}
+                    className="w-full"
+                    size="lg"
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="mobile_money">Mobile Money</SelectItem>
-                      <SelectItem value="credit">Credit</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="pt-4 border-t space-y-2">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>{subtotal.toLocaleString()} UGX</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Total</span>
-                    <span>{total.toLocaleString()} UGX</span>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={() => completeSaleMutation.mutate()}
-                  disabled={cart.length === 0 || completeSaleMutation.isPending}
-                  className="w-full"
-                  size="lg"
-                >
-                  {completeSaleMutation.isPending ? "Processing..." : "Complete Sale"}
-                </Button>
-              </CardContent>
-            </Card>
+                    {completeSaleMutation.isPending ? "Processing..." : "Complete Sale"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+
+      <PerfumeRefillDialog
+        open={showPerfumeRefillDialog}
+        onOpenChange={setShowPerfumeRefillDialog}
+        perfumeProducts={perfumeProducts}
+        customerId={selectedCustomerId}
+        onAddToCart={addToCart}
+      />
+
+      <ReceiptActionsDialog
+        isOpen={showReceiptDialog}
+        onClose={() => setShowReceiptDialog(false)}
+        receiptData={currentReceiptData}
+        isInvoice={currentReceiptData?.isInvoice}
+        onEdit={() => setShowEditDialog(true)}
+      />
+
+      <ReceiptEditDialog
+        isOpen={showEditDialog}
+        onClose={() => setShowEditDialog(false)}
+        receiptData={currentReceiptData}
+      />
+
+      {/* New Customer Dialog */}
+      <Dialog open={showNewCustomerDialog} onOpenChange={setShowNewCustomerDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="customer-name">Customer Name *</Label>
+              <Input
+                id="customer-name"
+                placeholder="Enter customer name"
+                value={newCustomerData.name}
+                onChange={(e) => setNewCustomerData(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customer-phone">Phone Number</Label>
+              <Input
+                id="customer-phone"
+                placeholder="e.g., +256700000000"
+                value={newCustomerData.phone}
+                onChange={(e) => setNewCustomerData(prev => ({ ...prev, phone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customer-email">Email</Label>
+              <Input
+                id="customer-email"
+                type="email"
+                placeholder="customer@email.com"
+                value={newCustomerData.email}
+                onChange={(e) => setNewCustomerData(prev => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customer-address">Address</Label>
+              <Input
+                id="customer-address"
+                placeholder="Enter customer address"
+                value={newCustomerData.address}
+                onChange={(e) => setNewCustomerData(prev => ({ ...prev, address: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowNewCustomerDialog(false);
+                setNewCustomerData({ name: "", phone: "", email: "", address: "" });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateCustomer}
+              disabled={!newCustomerData.name.trim() || createCustomerMutation.isPending}
+            >
+              {createCustomerMutation.isPending ? "Creating..." : "Create Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
