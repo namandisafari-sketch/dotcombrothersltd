@@ -90,23 +90,31 @@ const StaffManagement = () => {
   const { data: userProfiles, isLoading: isLoadingProfiles } = useQuery({
     queryKey: ["user-profiles-with-roles"],
     queryFn: async () => {
-      const { data: profiles, error } = await supabase
+      // Fetch profiles and roles separately (no FK relationship)
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select(`
-          *,
-          user_roles (role, department_id, nav_permissions)
-        `);
-      if (error) throw error;
+        .select("*");
       
-      // Get department names
-      const profilesWithDepts = await Promise.all((profiles || []).map(async (profile) => {
-        const userRole = Array.isArray(profile.user_roles) ? profile.user_roles[0] : null;
+      if (profilesError) throw profilesError;
+      
+      const { data: roles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("*");
+      
+      if (rolesError) throw rolesError;
+      
+      const { data: depts } = await supabase
+        .from("departments")
+        .select("id, name");
+      
+      const deptMap = new Map((depts || []).map(d => [d.id, d.name]));
+      const rolesMap = new Map((roles || []).map(r => [r.user_id, r]));
+      
+      return (profiles || []).map(profile => {
+        const userRole = rolesMap.get(profile.id);
         const deptId = userRole?.department_id;
-        let departmentName = "No Department";
-        if (deptId) {
-          const { data: dept } = await supabase.from("departments").select("name").eq("id", deptId).single();
-          departmentName = dept?.name || "Unknown";
-        }
+        const departmentName = deptId ? (deptMap.get(deptId) || "Unknown") : "No Department";
+        
         return {
           ...profile,
           department_id: deptId,
@@ -114,9 +122,7 @@ const StaffManagement = () => {
           user_nav_permissions: userRole?.nav_permissions || [],
           parsed_role: userRole?.role || "staff",
         };
-      }));
-      
-      return profilesWithDepts;
+      });
     },
   });
 
