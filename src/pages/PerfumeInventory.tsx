@@ -148,6 +148,23 @@ export default function PerfumeInventory() {
     enabled: !!selectedDepartmentId,
   });
 
+  // Fetch total stock from all scents (sum of stock_ml)
+  const { data: totalScentStock = 0 } = useQuery({
+    queryKey: ["total-scent-stock", selectedDepartmentId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("perfume_scents")
+        .select("stock_ml")
+        .or(selectedDepartmentId 
+          ? `department_id.eq.${selectedDepartmentId},department_id.is.null`
+          : `department_id.is.null`)
+        .eq("is_active", true);
+      
+      if (error) throw error;
+      return data?.reduce((sum, s) => sum + (s.stock_ml || 0), 0) || 0;
+    },
+  });
+
   // Fetch bottle pricing config
   const { data: bottlePricingConfig, refetch: refetchBottlePricingConfig } = useQuery({
     queryKey: ["bottle-pricing-config", selectedDepartmentId],
@@ -431,7 +448,7 @@ export default function PerfumeInventory() {
     setProductDialogOpen(true);
   };
 
-  const isOilPerfumeLowStock = (masterPerfume?.total_ml || 0) < (masterPerfume?.min_stock || 1000);
+  const isOilPerfumeLowStock = totalScentStock < (masterPerfume?.min_stock || 1000);
   const lowStockProducts = shopProducts.filter(p => (p.stock || 0) <= (p.min_stock || 5));
 
   return (
@@ -549,13 +566,13 @@ export default function PerfumeInventory() {
                   <CardContent className="space-y-6">
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-muted-foreground">Stock Level</span>
+                        <span className="text-sm font-medium text-muted-foreground">Stock Level (Sum of All Scents)</span>
                         <span className="text-sm font-semibold">
-                          {masterPerfume.total_ml?.toLocaleString() || 0} / {masterPerfume.min_stock?.toLocaleString() || 0} ml
+                          {totalScentStock.toLocaleString()} / {masterPerfume.min_stock?.toLocaleString() || 0} ml
                         </span>
                       </div>
                       <Progress 
-                        value={Math.min(((masterPerfume.total_ml || 0) / (masterPerfume.min_stock || 1000)) * 100, 100)} 
+                        value={Math.min((totalScentStock / (masterPerfume.min_stock || 1000)) * 100, 100)} 
                         className={cn(
                           "h-3",
                           isOilPerfumeLowStock && "[&>div]:bg-destructive"
@@ -568,9 +585,9 @@ export default function PerfumeInventory() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <span className="text-sm text-muted-foreground">Total Stock</span>
+                        <span className="text-sm text-muted-foreground">Total Stock (All Scents)</span>
                         <div className="text-4xl font-bold text-primary">
-                          {masterPerfume.total_ml?.toLocaleString() || 0} ml
+                          {totalScentStock.toLocaleString()} ml
                         </div>
                       </div>
                       
