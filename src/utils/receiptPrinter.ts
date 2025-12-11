@@ -284,6 +284,13 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
           ${data.businessInfo.whatsapp ? `<div style="margin-top: 5px;">WhatsApp: ${data.businessInfo.whatsapp}</div>` : ''}
         `}
       </div>
+      
+      <div style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #000; text-align: center; font-size: 9px; color: #555;">
+        <div style="font-weight: bold; margin-bottom: 3px;">System by KABEJJA SYSTEMS</div>
+        <div>In partnership with DOTCOM BROTHERS LTD</div>
+        <div style="margin-top: 5px;">🌐 www.kabejjasystems.store</div>
+        <div>📞 Talk to Earn: +256745368426</div>
+      </div>
     </body>
     </html>
   `;
