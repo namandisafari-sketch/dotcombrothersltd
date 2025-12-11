@@ -141,16 +141,23 @@ const Sales = () => {
         variantsForProducts.map((v: any) => v.product_id)
       );
       
-      // Filter out perfume products and filter by stock
+      // Filter out perfume products only (keep all others including out-of-stock)
       const finalFiltered = filteredProducts.filter((product: any) => {
         if (product.tracking_type === 'ml') return false;
         if (product.name === "Oil Perfume") return false;
-        if (productsWithVariants.has(product.id)) return true;
-        // Check both stock fields (some products use stock, others use current_stock)
-        return (product.current_stock > 0 || product.stock > 0);
+        return true;
       });
       
-      return finalFiltered.slice(0, 10);
+      // Sort: in-stock products first, then out-of-stock
+      const sorted = finalFiltered.sort((a: any, b: any) => {
+        const aStock = (a.current_stock || 0) + (a.stock || 0);
+        const bStock = (b.current_stock || 0) + (b.stock || 0);
+        if (aStock > 0 && bStock <= 0) return -1;
+        if (aStock <= 0 && bStock > 0) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      return sorted.slice(0, 50);
     },
     enabled: !!selectedDepartmentId,
   });
@@ -814,18 +821,35 @@ const Sales = () => {
                           : "";
                       
                         // Use stock field (or current_stock as fallback)
-                        const stockDisplay = product.tracking_type === "ml"
-                          ? `${product.total_ml || 0} ml`
+                        const stockValue = product.tracking_type === "ml"
+                          ? (product.total_ml || 0)
                           : (product.stock ?? product.current_stock ?? 0);
+                        
+                        const stockDisplay = product.tracking_type === "ml"
+                          ? `${stockValue} ml`
+                          : stockValue;
+                        
+                        const isOutOfStock = stockValue <= 0 && !variantCounts[product.id];
                       
                         return (
                           <div
                             key={product.id}
-                            className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors gap-2"
+                            className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg transition-colors gap-2 ${
+                              isOutOfStock 
+                                ? "bg-destructive/10 border border-destructive/20 opacity-60" 
+                                : "bg-muted/30 hover:bg-muted/50"
+                            }`}
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{product.name}</p>
+                                <p className={`font-medium ${isOutOfStock ? "line-through text-muted-foreground" : ""}`}>
+                                  {product.name}
+                                </p>
+                                {isOutOfStock && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Out of Stock
+                                  </Badge>
+                                )}
                                 {variantCounts[product.id] > 0 && (
                                   <Badge variant="default" className="text-xs">
                                     {variantCounts[product.id]} Variants
@@ -846,7 +870,9 @@ const Sales = () => {
                                 {variantCounts[product.id] > 0 ? (
                                   <span>Click to select variant</span>
                                 ) : (
-                                  <span>Stock: {stockDisplay}</span>
+                                  <span className={isOutOfStock ? "text-destructive" : ""}>
+                                    Stock: {stockDisplay}
+                                  </span>
                                 )}
                               </p>
                             </div>
@@ -855,6 +881,8 @@ const Sales = () => {
                               <Button
                                 size="sm"
                                 onClick={() => handleProductClick(product)}
+                                disabled={isOutOfStock}
+                                variant={isOutOfStock ? "outline" : "default"}
                               >
                                 <Plus className="w-4 h-4" />
                               </Button>
