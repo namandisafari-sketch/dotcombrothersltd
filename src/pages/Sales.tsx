@@ -146,7 +146,8 @@ const Sales = () => {
         if (product.tracking_type === 'ml') return false;
         if (product.name === "Oil Perfume") return false;
         if (productsWithVariants.has(product.id)) return true;
-        return product.current_stock > 0;
+        // Check both stock fields (some products use stock, others use current_stock)
+        return (product.current_stock > 0 || product.stock > 0);
       });
       
       return finalFiltered.slice(0, 10);
