@@ -151,13 +151,14 @@ export const reduceStock = async (
                 }
               }
             } else {
-              // Try to find scent by name if no scentId
+              // Try to find scent by name if no scentId - check both department-specific and global scents
               const { data: scentByName } = await supabase
                 .from("perfume_scents")
                 .select("id, name, stock_ml")
                 .eq("name", scent.scent)
-                .eq("department_id", departmentId)
-                .single();
+                .or(`department_id.eq.${departmentId},department_id.is.null`)
+                .limit(1)
+                .maybeSingle();
               
               if (scentByName && scent.ml > 0) {
                 const currentMl = scentByName.stock_ml ?? 0;
