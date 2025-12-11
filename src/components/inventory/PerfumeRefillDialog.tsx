@@ -79,14 +79,20 @@ export function PerfumeRefillDialog({
   const { data: scentsWithStock = [] } = useQuery({
     queryKey: ["scents-with-stock", selectedDepartmentId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch all active scents - both department-specific and global (null department)
+      let query = supabase
         .from("perfume_scents")
-        .select("id, name, description, stock_ml")
-        .or(selectedDepartmentId 
-          ? `department_id.eq.${selectedDepartmentId},department_id.is.null`
-          : `department_id.is.null`)
+        .select("id, name, description, stock_ml, department_id")
         .eq("is_active", true)
         .order("name");
+      
+      if (selectedDepartmentId) {
+        // Include scents for this department OR global scents (no department)
+        query = query.or(`department_id.eq.${selectedDepartmentId},department_id.is.null`);
+      }
+      // If no department selected, show all scents
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       return data || [];
