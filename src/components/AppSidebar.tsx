@@ -130,6 +130,7 @@ export function AppSidebar() {
     { path: "/perfume-dashboard", icon: LayoutDashboard, label: "My Shop", departmentTypes: ["perfume"] },
     { path: "/perfume-pos", icon: ShoppingCart, label: "Perfume POS", departmentTypes: ["perfume"] },
     { path: "/perfume-inventory", icon: Sparkles, label: "Perfume Inventory", departmentTypes: ["perfume"] },
+    { path: "/perfume-sales-history", icon: Receipt, label: "Sales History", departmentTypes: ["perfume"] },
     { path: "/perfume-report", icon: FileText, label: "Department Report", departmentTypes: ["perfume"] },
     { path: "/perfume-analytics", icon: BarChart3, label: "Perfume Analytics", departmentTypes: ["perfume"] },
     { path: "/scent-popularity", icon: TrendingUp, label: "Scent Popularity", departmentTypes: ["perfume"] },
