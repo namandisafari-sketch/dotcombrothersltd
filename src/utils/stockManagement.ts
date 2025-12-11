@@ -114,63 +114,9 @@ export const reduceStock = async (
       if (item.variantId) {
         console.log(`Deducting variant stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceVariantStock(item.variantId, item.quantity);
-      } else if (item.isPerfumeRefill && item.selectedScents && item.selectedScents.length > 0) {
-        // For perfume refills with scent tracking, reduce from specific scent stocks
-        console.log(`Deducting perfume refill stock from ${item.selectedScents.length} scents`);
-        
-        for (const scentUsage of item.selectedScents) {
-          if (scentUsage.scentId && scentUsage.ml > 0) {
-            const { data: scent, error: fetchError } = await supabase
-              .from("perfume_scents")
-              .select("id, name, stock_ml, current_weight_g, density")
-              .eq("id", scentUsage.scentId)
-              .single();
-            
-            if (fetchError) {
-              console.error(`Error fetching scent ${scentUsage.scent}:`, fetchError);
-              continue;
-            }
-            
-            if (scent) {
-              const currentStock = scent.stock_ml ?? 0;
-              const newStock = Math.max(0, currentStock - scentUsage.ml);
-              const density = scent.density || 0.9;
-              const weightReduction = scentUsage.ml * density;
-              const newWeight = Math.max(0, (scent.current_weight_g ?? 0) - weightReduction);
-              
-              console.log(`Scent ${scent.name}: Current=${currentStock}ml, Deducting=${scentUsage.ml}ml, New=${newStock}ml`);
-              
-              await supabase
-                .from("perfume_scents")
-                .update({ 
-                  stock_ml: newStock,
-                  current_weight_g: newWeight,
-                })
-                .eq("id", scentUsage.scentId);
-            }
-          }
-        }
-      } else if (item.isPerfumeRefill && item.totalMl) {
-        // Fallback for legacy flow without scent tracking
-        console.log(`Deducting perfume refill stock (legacy): ${item.totalMl}ml`);
-        const { data: masterPerfume } = await supabase
-          .from("products")
-          .select("id, total_ml, name")
-          .eq("name", "Oil Perfume")
-          .eq("tracking_type", "ml")
-          .eq("department_id", departmentId)
-          .maybeSingle();
-        
-        if (masterPerfume) {
-          const currentMl = masterPerfume.total_ml ?? 0;
-          const newMl = Math.max(0, currentMl - item.totalMl);
-          console.log(`Oil Perfume: Current=${currentMl}ml, Deducting=${item.totalMl}ml, New=${newMl}ml`);
-          
-          await supabase
-            .from("products")
-            .update({ total_ml: newMl })
-            .eq("id", masterPerfume.id);
-        }
+      } else if (item.isPerfumeRefill) {
+        // Scent stock is managed manually - no automatic deduction
+        console.log(`Perfume refill sale recorded (stock managed manually): ${item.totalMl || 0}ml`);
       } else if (item.productId) {
         console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceProductStock(item.productId, item.quantity, item.trackingType, item.totalMl);
