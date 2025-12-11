@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X, Sparkles, Plus, Package } from "lucide-react";
+import { X, Sparkles, Plus, Package, AlertTriangle, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PERFUME_SCENTS } from "@/constants/perfumeScents";
 import { useDepartment } from "@/contexts/DepartmentContext";
 
@@ -58,6 +58,7 @@ const DEFAULT_PRICING_CONFIG = {
 };
 
 const BOTTLE_SIZES = [10, 15, 20, 25, 30, 50, 100];
+const LOW_STOCK_THRESHOLD = 100; // ml
 
 export function PerfumeRefillDialog({
   open,
@@ -88,6 +89,44 @@ export function PerfumeRefillDialog({
       
       if (error) throw error;
       return data || [];
+    },
+    enabled: !!selectedDepartmentId,
+  });
+
+  // Fetch frequently used scents (from recent sales)
+  const { data: frequentScents = [] } = useQuery({
+    queryKey: ["frequent-scents", selectedDepartmentId],
+    queryFn: async () => {
+      if (!selectedDepartmentId) return [];
+      
+      // Get sales from last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { data: recentSales } = await supabase
+        .from("sale_items")
+        .select("scent_mixture, ml_amount")
+        .gte("created_at", thirtyDaysAgo.toISOString())
+        .not("scent_mixture", "is", null);
+      
+      if (!recentSales) return [];
+      
+      // Count scent usage
+      const scentCounts: Record<string, number> = {};
+      recentSales.forEach(sale => {
+        if (sale.scent_mixture) {
+          const scents = sale.scent_mixture.split(" + ").map(s => s.replace(/\s*\(\d+ml\)/, "").trim());
+          scents.forEach(scent => {
+            scentCounts[scent] = (scentCounts[scent] || 0) + 1;
+          });
+        }
+      });
+      
+      // Return top 5 most used scents
+      return Object.entries(scentCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, count]) => ({ name, count }));
     },
     enabled: !!selectedDepartmentId,
   });
@@ -159,6 +198,25 @@ export function PerfumeRefillDialog({
     return scentsWithStock.find(s => s.name === scentName);
   };
 
+  // Check if scent is frequently used
+  const isFrequentScent = (scentName: string) => {
+    return frequentScents.some(s => s.name === scentName);
+  };
+
+  // Get low stock scents
+  const getLowStockScents = () => {
+    return scentsWithStock.filter(s => (s.stock_ml || 0) < LOW_STOCK_THRESHOLD);
+  };
+
+  // Get scents with warnings (low stock that are frequently used)
+  const getWarningScents = () => {
+    return scentsWithStock.filter(s => {
+      const isLowStock = (s.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+      const isFrequent = isFrequentScent(s.name);
+      return isLowStock && isFrequent;
+    });
+  };
+
   const addScent = () => {
     if (!currentScent) {
       toast.error("Please select a scent");
@@ -177,10 +235,15 @@ export function PerfumeRefillDialog({
 
     const scentInfo = getScentInfo(currentScent);
     
+    // Warn if low stock
+    if (scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD) {
+      toast.warning(`Low stock warning: ${currentScent} only has ${scentInfo.stock_ml || 0}ml remaining`);
+    }
+    
     setSelectedScents([...selectedScents, {
       scent: currentScent,
       scentId: scentInfo?.id || null,
-      ml: 0, // Will be calculated when bottle size is selected
+      ml: 0,
     }]);
     
     setCurrentScent("");
@@ -216,7 +279,6 @@ export function PerfumeRefillDialog({
       const pricing = bottlePricing.find((p: any) => p.ml === totalMl);
       if (pricing) return pricing.price;
       
-      // Fallback to price per ml calculation
       return totalMl * (pricingConfig?.retail_price_per_ml || 800);
     } else {
       const pricePerMl = pricingConfig?.wholesale_price_per_ml || 400;
@@ -230,6 +292,21 @@ export function PerfumeRefillDialog({
       : (pricingConfig?.retail_price_per_ml || 800);
   };
 
+  // Check if any selected scent has insufficient stock
+  const checkStockSufficiency = () => {
+    const mlPerScent = getMlPerScent();
+    const insufficientScents: string[] = [];
+    
+    selectedScents.forEach(s => {
+      const scentInfo = getScentInfo(s.scent);
+      if (scentInfo && mlPerScent > (scentInfo.stock_ml || 0)) {
+        insufficientScents.push(`${s.scent} (need ${mlPerScent}ml, have ${scentInfo.stock_ml || 0}ml)`);
+      }
+    });
+    
+    return insufficientScents;
+  };
+
   const handleAddToCart = async () => {
     if (selectedScents.length === 0) {
       toast.error("Please add at least one scent");
@@ -238,6 +315,13 @@ export function PerfumeRefillDialog({
 
     if (!selectedBottleSize) {
       toast.error("Please select a bottle size");
+      return;
+    }
+
+    // Check stock sufficiency
+    const insufficientScents = checkStockSufficiency();
+    if (insufficientScents.length > 0) {
+      toast.error(`Insufficient stock: ${insufficientScents.join(", ")}`);
       return;
     }
 
@@ -331,6 +415,9 @@ export function PerfumeRefillDialog({
     return scentsWithStock.reduce((sum, s) => sum + (s.stock_ml || 0), 0);
   };
 
+  const warningScents = getWarningScents();
+  const lowStockScents = getLowStockScents();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -350,6 +437,43 @@ export function PerfumeRefillDialog({
               {getTotalAvailableStock().toLocaleString()} ml across {scentsWithStock.length} scents
             </Badge>
           </div>
+
+          {/* Warning for frequently used low stock scents */}
+          {warningScents.length > 0 && (
+            <Alert variant="destructive" className="mt-2">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Restock needed:</strong> {warningScents.map(s => `${s.name} (${s.stock_ml || 0}ml)`).join(", ")}
+                {" "}are frequently used but running low!
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Frequently used scents indicator */}
+          {frequentScents.length > 0 && (
+            <div className="mt-2 p-2 bg-primary/5 rounded-md">
+              <div className="flex items-center gap-1 text-sm font-medium mb-1">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Popular Scents (Last 30 days):
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {frequentScents.map(s => {
+                  const scentInfo = getScentInfo(s.name);
+                  const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                  return (
+                    <Badge 
+                      key={s.name} 
+                      variant={isLowStock ? "destructive" : "outline"}
+                      className="text-xs"
+                    >
+                      {s.name} ({s.count}x)
+                      {isLowStock && " ⚠️"}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </DialogHeader>
 
         <Tabs defaultValue="oil-perfume" className="w-full">
@@ -426,6 +550,8 @@ export function PerfumeRefillDialog({
                             {allScents.map((scent) => {
                               const scentInfo = getScentInfo(scent);
                               const hasStock = scentInfo && (scentInfo.stock_ml || 0) > 0;
+                              const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                              const isFrequent = isFrequentScent(scent);
                               
                               return (
                                 <CommandItem
@@ -437,9 +563,15 @@ export function PerfumeRefillDialog({
                                   }}
                                   className="flex justify-between"
                                 >
-                                  <span>{scent}</span>
+                                  <span className="flex items-center gap-1">
+                                    {scent}
+                                    {isFrequent && <TrendingUp className="w-3 h-3 text-primary" />}
+                                  </span>
                                   {scentInfo && (
-                                    <Badge variant={hasStock ? "secondary" : "outline"} className="ml-2 text-xs">
+                                    <Badge 
+                                      variant={isLowStock ? "destructive" : hasStock ? "secondary" : "outline"} 
+                                      className="ml-2 text-xs"
+                                    >
                                       {scentInfo.stock_ml || 0}ml
                                     </Badge>
                                   )}
@@ -462,22 +594,31 @@ export function PerfumeRefillDialog({
                   <div className="space-y-2">
                     <Label className="text-sm">Selected Scents ({selectedScents.length})</Label>
                     <div className="flex flex-wrap gap-2">
-                      {selectedScents.map((s) => (
-                        <Badge key={s.scent} variant="secondary" className="flex items-center gap-1 py-1">
-                          {s.scent}
-                          {selectedBottleSize && (
-                            <span className="text-xs opacity-70">({getMlPerScent()}ml)</span>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-4 w-4 p-0 ml-1"
-                            onClick={() => removeScent(s.scent)}
+                      {selectedScents.map((s) => {
+                        const scentInfo = getScentInfo(s.scent);
+                        const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                        return (
+                          <Badge 
+                            key={s.scent} 
+                            variant={isLowStock ? "destructive" : "secondary"} 
+                            className="flex items-center gap-1 py-1"
                           >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </Badge>
-                      ))}
+                            {s.scent}
+                            {selectedBottleSize && (
+                              <span className="text-xs opacity-70">({getMlPerScent()}ml)</span>
+                            )}
+                            {isLowStock && <AlertTriangle className="w-3 h-3" />}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-4 w-4 p-0 ml-1"
+                              onClick={() => removeScent(s.scent)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </Badge>
+                        );
+                      })}
                     </div>
                     {selectedBottleSize && selectedScents.length > 0 && (
                       <p className="text-xs text-muted-foreground">
@@ -488,6 +629,16 @@ export function PerfumeRefillDialog({
                 )}
               </CardContent>
             </Card>
+
+            {/* Stock Warning for selected scents */}
+            {selectedBottleSize && checkStockSufficiency().length > 0 && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Insufficient stock: {checkStockSufficiency().join(", ")}
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* Price Summary */}
             {selectedBottleSize && selectedScents.length > 0 && (
@@ -511,7 +662,7 @@ export function PerfumeRefillDialog({
             <Button 
               onClick={handleAddToCart} 
               className="w-full"
-              disabled={selectedScents.length === 0 || !selectedBottleSize}
+              disabled={selectedScents.length === 0 || !selectedBottleSize || checkStockSufficiency().length > 0}
             >
               Add to Cart
             </Button>
@@ -540,6 +691,7 @@ export function PerfumeRefillDialog({
                 {shopProducts.map((product) => {
                   const quantity = selectedShopProducts[product.id] || 0;
                   const stock = product.stock || product.current_stock || 0;
+                  const unit = product.unit || "pcs";
                   
                   return (
                     <Card key={product.id} className="p-3">
@@ -547,7 +699,7 @@ export function PerfumeRefillDialog({
                         <div className="flex-1">
                           <p className="font-medium">{product.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            UGX {product.price?.toLocaleString()} • Stock: {stock}
+                            UGX {product.price?.toLocaleString()} • Stock: {stock} {unit}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
