@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +80,31 @@ const SalesHistory = () => {
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
+
+  // Realtime subscription for sales updates
+  useEffect(() => {
+    if (!selectedDepartmentId) return;
+
+    const channel = supabase
+      .channel('sales-history-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sales',
+          filter: `department_id=eq.${selectedDepartmentId}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["sales-history"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDepartmentId, queryClient]);
 
   const voidMutation = useMutation({
     mutationFn: async ({ saleId, reason }: { saleId: string; reason: string }) => {
