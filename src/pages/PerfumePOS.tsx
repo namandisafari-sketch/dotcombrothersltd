@@ -401,6 +401,73 @@ const PerfumePOS = () => {
         throw new Error("Failed to save sale items: " + itemsError.message);
       }
 
+      // Auto-save customer scent preferences
+      if (mockSaleData.customer_id) {
+        try {
+          // Extract unique scents from cart items
+          const newScents: string[] = [];
+          const bottleSizes: string[] = [];
+          
+          cart.forEach(item => {
+            if (item.selectedScents && item.selectedScents.length > 0) {
+              item.selectedScents.forEach(s => {
+                if (s.scent && !newScents.includes(s.scent)) {
+                  newScents.push(s.scent);
+                }
+              });
+            }
+            if (item.totalMl) {
+              const sizeStr = `${item.totalMl}ml`;
+              if (!bottleSizes.includes(sizeStr)) {
+                bottleSizes.push(sizeStr);
+              }
+            }
+          });
+
+          if (newScents.length > 0) {
+            // Fetch existing preferences
+            const { data: existingPrefs } = await supabase
+              .from("customer_preferences")
+              .select("*")
+              .eq("customer_id", mockSaleData.customer_id)
+              .maybeSingle();
+
+            const existingScents = existingPrefs?.preferred_scents || [];
+            const existingSizes = existingPrefs?.preferred_bottle_sizes || [];
+            
+            // Merge with existing, keeping unique values
+            const mergedScents = [...new Set([...existingScents, ...newScents])];
+            const mergedSizes = [...new Set([...existingSizes, ...bottleSizes])];
+
+            if (existingPrefs) {
+              // Update existing
+              await supabase
+                .from("customer_preferences")
+                .update({
+                  preferred_scents: mergedScents,
+                  preferred_bottle_sizes: mergedSizes,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", existingPrefs.id);
+            } else {
+              // Insert new
+              await supabase
+                .from("customer_preferences")
+                .insert({
+                  customer_id: mockSaleData.customer_id,
+                  department_id: selectedDepartmentId,
+                  preferred_scents: newScents,
+                  preferred_bottle_sizes: bottleSizes,
+                });
+            }
+            console.log("Saved customer scent preferences:", mergedScents);
+          }
+        } catch (prefError) {
+          console.error("Failed to save preferences (non-blocking):", prefError);
+          // Don't throw - this is non-blocking
+        }
+      }
+
       // Update receipt data with actual receipt number
       mockSaleData.receiptData.receiptNumber = insertedSale.receipt_number;
       mockSaleData.receiptData.invoiceNumber = insertedSale.invoice_number;
