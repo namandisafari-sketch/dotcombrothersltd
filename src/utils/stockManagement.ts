@@ -159,25 +159,29 @@ export const reduceStock = async (
             
             // Fallback: Try to find scent by name (case-insensitive) - check both department-specific and global scents
             if (scent.ml > 0) {
-              console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId}`);
+              console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId || 'none'}`);
               
               // First try to find in department, then global
               let scentByName = null;
               let nameError = null;
               
-              // Try department-specific first
-              const { data: deptScent, error: deptError } = await supabase
-                .from("perfume_scents")
-                .select("id, name, stock_ml, department_id")
-                .ilike("name", scent.scent)
-                .eq("department_id", departmentId)
-                .limit(1)
-                .maybeSingle();
+              // Try department-specific first (only if departmentId is a valid UUID)
+              if (departmentId && departmentId !== 'null' && departmentId !== 'undefined') {
+                const { data: deptScent, error: deptError } = await supabase
+                  .from("perfume_scents")
+                  .select("id, name, stock_ml, department_id")
+                  .ilike("name", scent.scent)
+                  .eq("department_id", departmentId)
+                  .limit(1)
+                  .maybeSingle();
+                
+                if (deptScent) {
+                  scentByName = deptScent;
+                }
+              }
               
-              if (deptScent) {
-                scentByName = deptScent;
-              } else {
-                // Try global scent (null department)
+              // If not found in department, try global scent (null department)
+              if (!scentByName) {
                 const { data: globalScent, error: globalError } = await supabase
                   .from("perfume_scents")
                   .select("id, name, stock_ml, department_id")

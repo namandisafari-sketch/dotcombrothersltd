@@ -233,14 +233,20 @@ export function PerfumeRefillDialog({
 
     const scentInfo = getScentInfo(currentScent);
     
+    // Block adding scent if not found in database (required for stock deduction)
+    if (!scentInfo || !scentInfo.id) {
+      toast.error("Scent not found in inventory. Please add it first.");
+      return;
+    }
+    
     // Warn if low stock
-    if (scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD) {
+    if ((scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD) {
       toast.warning(`Low stock warning: ${currentScent} only has ${scentInfo.stock_ml || 0}ml remaining`);
     }
     
     setSelectedScents([...selectedScents, {
       scent: currentScent,
-      scentId: scentInfo?.id || null,
+      scentId: scentInfo.id, // Always set scentId since we validate above
       ml: 0,
     }]);
     
