@@ -591,6 +591,8 @@ const PerfumePOS = () => {
       queryClient.invalidateQueries({ queryKey: ["scents-with-stock"] });
       queryClient.invalidateQueries({ queryKey: ["oil-perfume-stock"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["perfume-scents"] });
+      queryClient.invalidateQueries({ queryKey: ["total-scent-stock"] });
       
       toast.success("Sale completed successfully!");
       setShowReceiptDialog(true);

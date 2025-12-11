@@ -116,33 +116,63 @@ export const reduceStock = async (
         console.log(`Deducting variant stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceVariantStock(item.variantId, item.quantity);
       } else if ((item.isPerfumeRefill || item.type === "perfume") && item.totalMl) {
-        // Deduct from master Oil Perfume total_ml only (scent division is manual)
-        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from Oil Perfume total`);
-        const { data: masterPerfume } = await supabase
-          .from("products")
-          .select("id, total_ml, name")
-          .eq("name", "Oil Perfume")
-          .eq("tracking_type", "ml")
-          .eq("department_id", departmentId)
-          .maybeSingle();
+        // Deduct from individual scent stock_ml values
+        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from scents`);
         
-        if (masterPerfume) {
-          const currentMl = masterPerfume.total_ml ?? 0;
-          const newMl = Math.max(0, currentMl - item.totalMl);
-          console.log(`Oil Perfume: Current=${currentMl}ml, Deducting=${item.totalMl}ml, New=${newMl}ml`);
-          
-          const { error } = await supabase
-            .from("products")
-            .update({ total_ml: newMl })
-            .eq("id", masterPerfume.id);
-          
-          if (error) {
-            console.error("Error updating Oil Perfume stock:", error);
-          } else {
-            console.log(`Oil Perfume stock updated successfully to ${newMl}ml`);
+        if (item.selectedScents && item.selectedScents.length > 0) {
+          // Deduct from each selected scent
+          for (const scent of item.selectedScents) {
+            if (scent.scentId && scent.ml > 0) {
+              const { data: scentData, error: fetchError } = await supabase
+                .from("perfume_scents")
+                .select("id, name, stock_ml")
+                .eq("id", scent.scentId)
+                .single();
+              
+              if (fetchError) {
+                console.error(`Error fetching scent ${scent.scent}:`, fetchError);
+                continue;
+              }
+              
+              if (scentData) {
+                const currentMl = scentData.stock_ml ?? 0;
+                const newMl = Math.max(0, currentMl - scent.ml);
+                console.log(`Scent ${scentData.name}: Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
+                
+                const { error: updateError } = await supabase
+                  .from("perfume_scents")
+                  .update({ stock_ml: newMl })
+                  .eq("id", scent.scentId);
+                
+                if (updateError) {
+                  console.error(`Error updating scent ${scentData.name}:`, updateError);
+                } else {
+                  console.log(`Scent ${scentData.name} stock updated to ${newMl}ml`);
+                }
+              }
+            } else {
+              // Try to find scent by name if no scentId
+              const { data: scentByName } = await supabase
+                .from("perfume_scents")
+                .select("id, name, stock_ml")
+                .eq("name", scent.scent)
+                .eq("department_id", departmentId)
+                .single();
+              
+              if (scentByName && scent.ml > 0) {
+                const currentMl = scentByName.stock_ml ?? 0;
+                const newMl = Math.max(0, currentMl - scent.ml);
+                console.log(`Scent ${scentByName.name} (by name): Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
+                
+                await supabase
+                  .from("perfume_scents")
+                  .update({ stock_ml: newMl })
+                  .eq("id", scentByName.id);
+              }
+            }
           }
         } else {
-          console.warn("Master Oil Perfume product not found for department:", departmentId);
+          console.warn("No selectedScents provided for perfume refill, cannot deduct individual scent stock");
         }
       } else if (item.productId) {
         console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
