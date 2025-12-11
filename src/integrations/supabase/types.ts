@@ -1368,6 +1368,7 @@ export type Database = {
           id: string
           logo_url: string | null
           receipt_footer: string | null
+          receipt_logo_url: string | null
           seasonal_remark: string | null
           settings_json: Json | null
           show_back_page: boolean | null
@@ -1388,6 +1389,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           receipt_footer?: string | null
+          receipt_logo_url?: string | null
           seasonal_remark?: string | null
           settings_json?: Json | null
           show_back_page?: boolean | null
@@ -1408,6 +1410,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           receipt_footer?: string | null
+          receipt_logo_url?: string | null
           seasonal_remark?: string | null
           settings_json?: Json | null
           show_back_page?: boolean | null

@@ -629,7 +629,7 @@ const Sales = () => {
           address: settings?.business_address || "Kasangati opp Kasangati Police Station",
           phone: settings?.business_phone || "+256745368426",
           email: settings?.business_email || "",
-          logo: settings?.logo_url || "",
+          logo: (settings as any)?.receipt_logo_url || settings?.logo_url || "",
           whatsapp: settings?.whatsapp_number || "+256745368426",
           website: settings?.website || "",
         },

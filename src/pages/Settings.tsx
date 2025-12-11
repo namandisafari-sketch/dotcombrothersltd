@@ -31,12 +31,14 @@ const Settings = () => {
     business_email: "",
     whatsapp_number: "",
     logo_url: logoImage,
+    receipt_logo_url: "",
     website: "",
     seasonal_remark: "",
     show_back_page: true,
   });
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptLogoInputRef = useRef<HTMLInputElement>(null);
 
   const { data: departments } = useQuery({
     queryKey: ["departments"],
@@ -82,6 +84,7 @@ const Settings = () => {
         business_email: settings.business_email || "",
         whatsapp_number: settings.whatsapp_number || "",
         logo_url: settings.logo_url || logoImage,
+        receipt_logo_url: (settings as any).receipt_logo_url || "",
         website: (settings as any).website || "",
         seasonal_remark: (settings as any).seasonal_remark || "",
         show_back_page: (settings as any).show_back_page !== false,
@@ -95,6 +98,7 @@ const Settings = () => {
         business_email: "",
         whatsapp_number: "",
         logo_url: logoImage,
+        receipt_logo_url: "",
         website: "",
         seasonal_remark: "",
         show_back_page: true,
@@ -395,6 +399,76 @@ const Settings = () => {
 
                 <Card>
                   <CardHeader>
+                    <CardTitle>Receipt Logo (Optional)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-xs text-muted-foreground">
+                      Use a different logo on receipts. If not set, the main business logo will be used.
+                    </p>
+                    <div className="flex flex-col items-center gap-4">
+                      <img
+                        src={formData.receipt_logo_url || formData.logo_url}
+                        alt="Receipt Logo"
+                        className="w-32 h-32 object-contain border rounded-lg p-2"
+                      />
+                      <input
+                        type="file"
+                        ref={receiptLogoInputRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const fileExt = file.name.split('.').pop();
+                              const fileName = `receipt_logo_${Date.now()}.${fileExt}`;
+                              
+                              const { error: uploadError } = await supabase.storage
+                                .from('department-logos')
+                                .upload(fileName, file, { upsert: true });
+                              
+                              if (uploadError) throw uploadError;
+                              
+                              const { data: urlData } = supabase.storage
+                                .from('department-logos')
+                                .getPublicUrl(fileName);
+                              
+                              setFormData(prev => ({
+                                ...prev,
+                                receipt_logo_url: urlData.publicUrl,
+                              }));
+                              toast.success('Receipt logo uploaded successfully');
+                            } catch (error) {
+                              console.error('Receipt logo upload error:', error);
+                              toast.error('Failed to upload receipt logo');
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => receiptLogoInputRef.current?.click()}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Receipt Logo
+                      </Button>
+                      {formData.receipt_logo_url && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setFormData({ ...formData, receipt_logo_url: "" })
+                          }
+                        >
+                          Use Main Logo Instead
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <QrCode className="w-5 h-5" />
                       WhatsApp QR Code
@@ -446,7 +520,7 @@ const Settings = () => {
                     address: formData.business_address,
                     phone: formData.business_phone,
                     email: formData.business_email,
-                    logo: formData.logo_url,
+                    logo: formData.receipt_logo_url || formData.logo_url,
                     seasonalRemark: formData.seasonal_remark,
                     website: formData.website,
                     whatsapp: formData.whatsapp_number,

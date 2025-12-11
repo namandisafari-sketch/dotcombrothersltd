@@ -504,7 +504,7 @@ const MobileMoney = () => {
           address: deptSettings?.business_address || "Kasangati opp Kasangati Police Station",
           phone: deptSettings?.business_phone || "+256745368426",
           email: deptSettings?.business_email || undefined,
-          logo: deptSettings?.logo_url || undefined,
+          logo: (deptSettings as any)?.receipt_logo_url || deptSettings?.logo_url || undefined,
           whatsapp: deptSettings?.whatsapp_number || "+256745368426",
           website: deptSettings?.website || undefined,
         },
