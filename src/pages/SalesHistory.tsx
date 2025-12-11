@@ -5,13 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Printer, Calendar, Ban } from "lucide-react";
+import { Search, Eye, Printer, Calendar, Ban, Smartphone } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { printReceipt, generateReceiptHTML } from "@/utils/receiptPrinter";
 import { PrintPreviewDialog } from "@/components/PrintPreviewDialog";
+import { MobilePrintDialog } from "@/components/MobilePrintDialog";
+import { isMobile } from "@/utils/mobilePrinter";
 import { toast } from "sonner";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -33,6 +35,8 @@ const SalesHistory = () => {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printPreviewHtml, setPrintPreviewHtml] = useState("");
   const [printPreviewSale, setPrintPreviewSale] = useState<any>(null);
+  const [showMobilePrint, setShowMobilePrint] = useState(false);
+  const [mobilePrintData, setMobilePrintData] = useState<any>(null);
 
   const { data: sales, isLoading } = useQuery({
     queryKey: ["sales-history", searchQuery, startDate, endDate, selectedDepartmentId],
@@ -149,6 +153,7 @@ const SalesHistory = () => {
         quantity: item.quantity,
         price: item.unit_price,
         subtotal: item.subtotal,
+        scentMixture: item.scent_mixture,
       })),
       subtotal: sale.subtotal,
       tax: 0,
@@ -171,6 +176,13 @@ const SalesHistory = () => {
       },
       seasonalRemark: settings?.seasonal_remark,
     };
+
+    // Check if on mobile - use mobile print dialog
+    if (isMobile()) {
+      setMobilePrintData(receiptData);
+      setShowMobilePrint(true);
+      return;
+    }
 
     if (usePreview) {
       // Show print preview dialog
@@ -309,8 +321,12 @@ const SalesHistory = () => {
                             size="sm"
                             onClick={() => handleReprintReceipt(sale)}
                           >
-                            <Printer className="h-4 w-4 mr-1" />
-                            Reprint
+                            {isMobile() ? (
+                              <Smartphone className="h-4 w-4 mr-1" />
+                            ) : (
+                              <Printer className="h-4 w-4 mr-1" />
+                            )}
+                            {isMobile() ? "Print" : "Reprint"}
                           </Button>
                           <Button
                             variant="destructive"
@@ -490,6 +506,18 @@ const SalesHistory = () => {
         documentType="receipt"
         onPrint={handlePrintFromPreview}
       />
+
+      {/* Mobile Print Dialog */}
+      {mobilePrintData && (
+        <MobilePrintDialog
+          open={showMobilePrint}
+          onOpenChange={setShowMobilePrint}
+          receiptData={mobilePrintData}
+          onPrintComplete={() => {
+            toast.success("Receipt sent");
+          }}
+        />
+      )}
     </div>
   );
 };
