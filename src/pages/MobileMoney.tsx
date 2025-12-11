@@ -587,6 +587,26 @@ const MobileMoney = () => {
     toast.success("Custom price applied");
   };
 
+  // Show message if no mobile money department exists
+  if (!mobileMoneyDepts || mobileMoneyDepts.length === 0) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="container mx-auto p-6">
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h2 className="text-xl font-semibold mb-2">No Mobile Money Department</h2>
+              <p className="text-muted-foreground">
+                No mobile money department has been set up yet. Please contact an administrator to create one.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
@@ -1114,20 +1134,44 @@ const MobileMoney = () => {
 
           {/* Data Packages Tab */}
           <TabsContent value="data-packages">
-            <div className="space-y-6">
-              <DataPackages departmentId={selectedDeptId || ""} />
-              <DataPackageAnalytics departmentId={selectedDeptId} dateFilter="daily" />
-            </div>
+            {selectedDeptId ? (
+              <div className="space-y-6">
+                <DataPackages departmentId={selectedDeptId} />
+                <DataPackageAnalytics departmentId={selectedDeptId} dateFilter="daily" />
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Please select a Mobile Money department to manage data packages.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Customer Registration Tab */}
           <TabsContent value="registrations">
-            <CustomerRegistration departmentId={selectedDeptId || ""} />
+            {selectedDeptId ? (
+              <CustomerRegistration departmentId={selectedDeptId} />
+            ) : (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Please select a Mobile Money department to manage customer registrations.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Sales History Tab */}
           <TabsContent value="history">
-            <MobileMoneyHistory departmentId={selectedDeptId || ""} />
+            {selectedDeptId ? (
+              <MobileMoneyHistory departmentId={selectedDeptId} />
+            ) : (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Please select a Mobile Money department to view sales history.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Daily Reports Tab */}
@@ -1515,7 +1559,15 @@ const MobileMoney = () => {
 
           {/* Card Settings Tab */}
           <TabsContent value="card-settings">
-            <SimCardSettings departmentId={selectedDeptId || ""} />
+            {selectedDeptId ? (
+              <SimCardSettings departmentId={selectedDeptId} />
+            ) : (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Please select a Mobile Money department to configure SIM card settings.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>

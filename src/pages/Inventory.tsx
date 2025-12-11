@@ -320,12 +320,16 @@ const Inventory = () => {
             
             <Button
               onClick={() => {
+                if (!selectedDepartmentId) {
+                  toast.error("Please select a department first");
+                  return;
+                }
                 setEditingProduct(null);
                 setFormData({
                   name: "",
                   barcode: "",
                   category_id: "",
-                  department_id: selectedDepartmentId || "",
+                  department_id: selectedDepartmentId,
                   brand: "",
                   unit: "",
                   quantity_per_unit: 1,
