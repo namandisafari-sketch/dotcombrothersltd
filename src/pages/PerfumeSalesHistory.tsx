@@ -17,12 +17,12 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { PrintPreviewDialog } from "@/components/PrintPreviewDialog";
 import { MobilePrintDialog } from "@/components/MobilePrintDialog";
-import { useMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const PerfumeSalesHistory = () => {
   const queryClient = useQueryClient();
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
-  const isMobile = useMobile();
+  const isMobile = useIsMobile();
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSale, setSelectedSale] = useState<any>(null);
@@ -562,17 +562,17 @@ const PerfumeSalesHistory = () => {
         onOpenChange={setShowPrintPreview}
         documentHtml={printPreviewHtml}
         documentTitle="Receipt"
-        documentType="Receipt"
+        documentType="receipt"
         onPrint={handlePrintFromPreview}
       />
 
       {/* Mobile Print Dialog */}
       {mobilePrintData && (
         <MobilePrintDialog
-          isOpen={showMobilePrint}
-          onClose={() => {
-            setShowMobilePrint(false);
-            setMobilePrintData(null);
+          open={showMobilePrint}
+          onOpenChange={(open) => {
+            setShowMobilePrint(open);
+            if (!open) setMobilePrintData(null);
           }}
           receiptData={mobilePrintData}
         />
