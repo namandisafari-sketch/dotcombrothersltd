@@ -797,18 +797,19 @@ const Sales = () => {
 
                     <TabsContent value="products" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
                       {products?.map((product) => {
-                        // Calculate display price for perfume products
+                        // Calculate display price - use price field (or selling_price as fallback)
                         const displayPrice = product.tracking_type === "ml"
                           ? (product.retail_price_per_ml || product.wholesale_price_per_ml || 0)
-                          : product.selling_price;
+                          : (product.price || product.selling_price || 0);
                       
                         const priceLabel = product.tracking_type === "ml" 
                           ? "per ml" 
                           : "";
                       
+                        // Use stock field (or current_stock as fallback)
                         const stockDisplay = product.tracking_type === "ml"
                           ? `${product.total_ml || 0} ml`
-                          : product.current_stock;
+                          : (product.stock ?? product.current_stock ?? 0);
                       
                         return (
                           <div
