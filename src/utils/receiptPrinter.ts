@@ -44,7 +44,12 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
         @media print {
           body { margin: 0; padding: 10px; }
           @page { margin: 0; size: auto; }
-          .back-page { page-break-before: avoid !important; }
+          * { page-break-inside: avoid !important; }
+          .back-page { 
+            page-break-before: avoid !important; 
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+          }
         }
         body {
           font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -348,39 +353,43 @@ export const printReceipt = async (receiptData: ReceiptData, previewOnly: boolea
     }
 
     // Wait for all images to load before printing
-    const waitForImages = () => {
+    const waitForImages = async () => {
       const images = printWindow.document.querySelectorAll('img');
       const imagePromises = Array.from(images).map(img => {
-        if (img.complete) return Promise.resolve();
         return new Promise<void>((resolveImg) => {
+          if (img.complete && img.naturalHeight !== 0) {
+            resolveImg();
+            return;
+          }
           img.onload = () => resolveImg();
           img.onerror = () => resolveImg(); // Continue even if image fails
         });
       });
-      return Promise.all(imagePromises);
+      await Promise.all(imagePromises);
     };
 
-    printWindow.onload = async () => {
+    // Use requestAnimationFrame + setTimeout instead of onload for dynamically written content
+    const initPrint = async () => {
       try {
-        // Wait for images to load with timeout
+        // Wait for images with timeout
         await Promise.race([
           waitForImages(),
-          new Promise(r => setTimeout(r, 2000)) // 2 second timeout
+          new Promise(r => setTimeout(r, 3000)) // 3 second timeout for images
         ]);
         
-        // Small delay for rendering
+        // Additional delay for full content rendering
+        await new Promise(r => setTimeout(r, 800));
+        
+        printWindow.print();
+        printWindow.onafterprint = () => {
+          printWindow.close();
+          resolve(true);
+        };
+        // Fallback if onafterprint doesn't fire
         setTimeout(() => {
-          printWindow.print();
-          printWindow.onafterprint = () => {
-            printWindow.close();
-            resolve(true);
-          };
-          // Fallback if onafterprint doesn't fire
-          setTimeout(() => {
-            printWindow.close();
-            resolve(true);
-          }, 2000);
-        }, 500);
+          printWindow.close();
+          resolve(true);
+        }, 3000);
       } catch (err) {
         console.error('Error waiting for images:', err);
         printWindow.print();
@@ -390,6 +399,18 @@ export const printReceipt = async (receiptData: ReceiptData, previewOnly: boolea
         }, 2000);
       }
     };
+
+    // Wait for document to be ready using requestAnimationFrame
+    if (printWindow.requestAnimationFrame) {
+      printWindow.requestAnimationFrame(() => {
+        printWindow.requestAnimationFrame(() => {
+          initPrint();
+        });
+      });
+    } else {
+      // Fallback for browsers without requestAnimationFrame
+      setTimeout(initPrint, 500);
+    }
   });
 };
 
