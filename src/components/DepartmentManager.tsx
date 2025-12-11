@@ -9,9 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Pencil, Trash2 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Building2, Plus, Pencil, Trash2, Smartphone, Droplets, Package } from "lucide-react";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/checkbox";
+
+type DepartmentType = "other" | "perfume" | "mobile_money";
 
 export function DepartmentManager() {
   const queryClient = useQueryClient();
@@ -21,7 +23,7 @@ export function DepartmentManager() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    is_mobile_money: false,
+    department_type: "other" as DepartmentType,
   });
 
   const { data: departments } = useQuery({
@@ -32,16 +34,33 @@ export function DepartmentManager() {
     },
   });
 
+  // Helper to convert department_type to database fields
+  const getDepartmentFields = (type: DepartmentType) => ({
+    is_perfume_department: type === "perfume",
+    is_mobile_money: type === "mobile_money",
+  });
+
+  // Helper to get department type from database fields
+  const getDepartmentType = (dept: any): DepartmentType => {
+    if (dept.is_perfume_department) return "perfume";
+    if (dept.is_mobile_money) return "mobile_money";
+    return "other";
+  };
+
   const addDepartment = useMutation({
     mutationFn: async (dept: typeof formData) => {
-      const { error } = await supabase.from("departments").insert(dept);
+      const { error } = await supabase.from("departments").insert({
+        name: dept.name,
+        description: dept.description,
+        ...getDepartmentFields(dept.department_type),
+      });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["departments"] });
       toast.success("Department added successfully");
       setShowAddForm(false);
-      setFormData({ name: "", description: "", is_mobile_money: false });
+      setFormData({ name: "", description: "", department_type: "other" });
     },
     onError: () => {
       toast.error("Failed to add department");
@@ -50,7 +69,11 @@ export function DepartmentManager() {
 
   const updateDepartment = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
-      const { error } = await supabase.from("departments").update(data).eq("id", id);
+      const { error } = await supabase.from("departments").update({
+        name: data.name,
+        description: data.description,
+        ...getDepartmentFields(data.department_type),
+      }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -109,17 +132,35 @@ export function DepartmentManager() {
                 placeholder="Department description..."
               />
             </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="is_mobile_money"
-                checked={formData.is_mobile_money}
-                onCheckedChange={(checked) => 
-                  setFormData({ ...formData, is_mobile_money: checked === true })
-                }
-              />
-              <Label htmlFor="is_mobile_money" className="cursor-pointer">
-                This is a Mobile Money department
-              </Label>
+            <div className="space-y-3">
+              <Label>Department Type</Label>
+              <RadioGroup 
+                value={formData.department_type} 
+                onValueChange={(value) => setFormData({ ...formData, department_type: value as DepartmentType })}
+                className="grid grid-cols-3 gap-2"
+              >
+                <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                  <RadioGroupItem value="other" id="type_other" />
+                  <Label htmlFor="type_other" className="cursor-pointer flex items-center gap-2">
+                    <Package className="w-4 h-4" />
+                    General
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                  <RadioGroupItem value="perfume" id="type_perfume" />
+                  <Label htmlFor="type_perfume" className="cursor-pointer flex items-center gap-2">
+                    <Droplets className="w-4 h-4" />
+                    Perfume
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                  <RadioGroupItem value="mobile_money" id="type_mobile_money" />
+                  <Label htmlFor="type_mobile_money" className="cursor-pointer flex items-center gap-2">
+                    <Smartphone className="w-4 h-4" />
+                    Mobile Money
+                  </Label>
+                </div>
+              </RadioGroup>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => addDepartment.mutate(formData)}>Add Department</Button>
@@ -158,7 +199,7 @@ export function DepartmentManager() {
                     setFormData({ 
                       name: dept.name, 
                       description: dept.description || "",
-                      is_mobile_money: dept.is_mobile_money || false
+                      department_type: getDepartmentType(dept),
                     });
                   }}
                 >
@@ -209,17 +250,35 @@ export function DepartmentManager() {
                   placeholder="Department description..."
                 />
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="edit_is_mobile_money"
-                  checked={formData.is_mobile_money}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, is_mobile_money: checked === true })
-                  }
-                />
-                <Label htmlFor="edit_is_mobile_money" className="cursor-pointer">
-                  This is a Mobile Money department
-                </Label>
+              <div className="space-y-3">
+                <Label>Department Type</Label>
+                <RadioGroup 
+                  value={formData.department_type} 
+                  onValueChange={(value) => setFormData({ ...formData, department_type: value as DepartmentType })}
+                  className="grid grid-cols-3 gap-2"
+                >
+                  <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                    <RadioGroupItem value="other" id="edit_type_other" />
+                    <Label htmlFor="edit_type_other" className="cursor-pointer flex items-center gap-2">
+                      <Package className="w-4 h-4" />
+                      General
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                    <RadioGroupItem value="perfume" id="edit_type_perfume" />
+                    <Label htmlFor="edit_type_perfume" className="cursor-pointer flex items-center gap-2">
+                      <Droplets className="w-4 h-4" />
+                      Perfume
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2 border rounded-lg p-3 cursor-pointer hover:bg-muted/50">
+                    <RadioGroupItem value="mobile_money" id="edit_type_mobile_money" />
+                    <Label htmlFor="edit_type_mobile_money" className="cursor-pointer flex items-center gap-2">
+                      <Smartphone className="w-4 h-4" />
+                      Mobile Money
+                    </Label>
+                  </div>
+                </RadioGroup>
               </div>
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setEditingDept(null)}>
