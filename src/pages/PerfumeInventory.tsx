@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { ScentStockManager } from "@/components/inventory/ScentStockManager";
+import { StockReconciliation } from "@/components/inventory/StockReconciliation";
 
 interface PerfumeProduct {
   id: string;
@@ -494,10 +495,17 @@ export default function PerfumeInventory() {
             <TabsTrigger value="shop-products">Shop Products</TabsTrigger>
           </TabsList>
 
-          {/* Scent Stock Tab - NEW */}
+          {/* Scent Stock Tab */}
           <TabsContent value="scent-stock" className="space-y-6">
             {selectedDepartmentId ? (
-              <ScentStockManager departmentId={selectedDepartmentId} />
+              <div className="grid gap-6 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <ScentStockManager departmentId={selectedDepartmentId} />
+                </div>
+                <div>
+                  <StockReconciliation departmentId={selectedDepartmentId} />
+                </div>
+              </div>
             ) : (
               <Card>
                 <CardContent className="p-8 text-center">
