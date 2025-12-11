@@ -434,6 +434,38 @@ export const generateInvoiceHTML = (data: InvoiceData): string => {
       </div>
 
     </div>
+    
+    <!-- Back Page - System Info (prints on second page) -->
+    <div style="page-break-before: always; padding: 40px; text-align: center;">
+      <div style="border: 2px dashed #333; border-radius: 12px; padding: 30px; max-width: 500px; margin: 0 auto;">
+        <div style="font-size: 14px; color: #666; margin-bottom: 15px;">✂️ BACK PAGE ✂️</div>
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">POWERED BY</div>
+        <div style="font-weight: bold; font-size: 24px; margin-bottom: 8px; color: #000;">KABEJJA SYSTEMS</div>
+        <div style="margin-bottom: 20px; font-size: 14px; color: #555;">In partnership with DOTCOM BROTHERS LTD</div>
+        
+        <div style="display: flex; justify-content: center; gap: 30px; margin: 25px 0;">
+          <div style="text-align: center;">
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 8px;">Scan to Visit Website</div>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://www.kabejjasystems.store" 
+                 alt="Website QR" 
+                 style="width: 120px; height: 120px; border: 2px solid #333; border-radius: 8px; padding: 5px; background: white;" />
+            <div style="font-size: 11px; margin-top: 5px;">🌐 kabejjasystems.store</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 8px;">Scan to WhatsApp</div>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://wa.me/256745368426" 
+                 alt="WhatsApp QR" 
+                 style="width: 120px; height: 120px; border: 2px solid #333; border-radius: 8px; padding: 5px; background: white;" />
+            <div style="font-size: 11px; margin-top: 5px;">📞 +256745368426</div>
+          </div>
+        </div>
+        
+        <div style="border-top: 1px dashed #333; padding-top: 15px; margin-top: 15px;">
+          <div style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">Talk to Earn for POS Systems!</div>
+          <div style="font-size: 12px; color: #666;">Custom software solutions for your business</div>
+        </div>
+      </div>
+    </div>
     </body>
     </html>
   `;
