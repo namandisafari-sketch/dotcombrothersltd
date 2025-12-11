@@ -135,7 +135,6 @@ export const generatePlainTextReceipt = (data: ReceiptData): string => {
 // Print via RawBT intent (Android)
 export const printViaRawBT = (text: string): void => {
   // RawBT uses a custom URL scheme
-  const encodedText = encodeURIComponent(text);
   window.location.href = `rawbt:base64,${btoa(unescape(encodeURIComponent(text)))}`;
 };
 
@@ -163,6 +162,160 @@ export const shareReceiptText = async (data: ReceiptData): Promise<boolean> => {
     return true;
   } catch (err) {
     console.error('Clipboard failed:', err);
+    return false;
+  }
+};
+
+// Generate receipt as image using html2canvas
+export const generateReceiptImage = async (data: ReceiptData): Promise<Blob | null> => {
+  try {
+    const html2canvas = (await import('html2canvas')).default;
+    
+    // Create a container for the receipt
+    const container = document.createElement('div');
+    container.innerHTML = generateImageOptimizedReceiptHTML(data);
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '320px';
+    document.body.appendChild(container);
+    
+    // Wait for fonts and images to load
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const canvas = await html2canvas(container, {
+      backgroundColor: '#ffffff',
+      scale: 2, // Higher quality
+      logging: false,
+      useCORS: true,
+      width: 320,
+    });
+    
+    document.body.removeChild(container);
+    
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png', 0.95);
+    });
+  } catch (error) {
+    console.error('Error generating receipt image:', error);
+    return null;
+  }
+};
+
+// Optimized HTML for image generation (cleaner, faster rendering)
+const generateImageOptimizedReceiptHTML = (data: ReceiptData): string => {
+  const discount = data.subtotal - data.total + (data.tax || 0);
+  
+  return `
+    <div style="font-family: 'Courier New', monospace; font-size: 12px; padding: 15px; background: white; width: 290px;">
+      <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px;">
+        <div style="font-weight: bold; font-size: 14px;">${data.businessInfo.name}</div>
+        <div style="font-size: 11px;">${data.businessInfo.address}</div>
+        <div style="font-size: 11px;">Tel: ${data.businessInfo.phone}</div>
+      </div>
+      
+      <div style="margin-bottom: 10px; font-size: 11px;">
+        <div><strong>Receipt:</strong> ${data.receiptNumber}</div>
+        <div><strong>Date:</strong> ${data.date}</div>
+        ${data.cashierName ? `<div><strong>Cashier:</strong> ${data.cashierName}</div>` : ''}
+      </div>
+      
+      <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 8px 0; margin: 8px 0;">
+        ${data.items.map(item => `
+          <div style="margin-bottom: 6px;">
+            <div style="font-weight: bold;">${item.name}</div>
+            <div style="display: flex; justify-content: space-between;">
+              <span>x${item.quantity} @ ${item.price.toLocaleString()}</span>
+              <span>${item.subtotal.toLocaleString()}</span>
+            </div>
+            ${item.scentMixture ? `<div style="font-size: 10px; color: #666; padding-left: 8px;">Scents: ${item.scentMixture}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      
+      <div style="margin: 10px 0;">
+        <div style="display: flex; justify-content: space-between;">
+          <span>Subtotal:</span>
+          <span>${data.subtotal.toLocaleString()} UGX</span>
+        </div>
+        ${discount > 0 ? `
+          <div style="display: flex; justify-content: space-between;">
+            <span>Discount:</span>
+            <span>-${discount.toLocaleString()} UGX</span>
+          </div>
+        ` : ''}
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; border-top: 2px solid #000; padding-top: 5px; margin-top: 5px;">
+          <span>TOTAL:</span>
+          <span>${data.total.toLocaleString()} UGX</span>
+        </div>
+      </div>
+      
+      <div style="text-align: center; margin: 10px 0; font-size: 11px;">
+        Paid by: <strong>${(data.paymentMethod || 'N/A').toUpperCase()}</strong>
+      </div>
+      
+      ${data.customerName ? `
+        <div style="border-top: 1px dashed #000; padding-top: 8px; font-size: 11px;">
+          Customer: ${data.customerName}
+          ${data.customerPhone ? `<br>Phone: ${data.customerPhone}` : ''}
+        </div>
+      ` : ''}
+      
+      <div style="text-align: center; border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px;">
+        <div style="font-weight: bold;">THANK YOU!</div>
+        <div style="font-size: 10px;">Visit again</div>
+        ${data.seasonalRemark ? `<div style="font-size: 10px; margin-top: 5px;">${data.seasonalRemark}</div>` : ''}
+        ${data.businessInfo.whatsapp ? `<div style="font-size: 10px; margin-top: 5px;">WhatsApp: ${data.businessInfo.whatsapp}</div>` : ''}
+      </div>
+    </div>
+  `;
+};
+
+// Share receipt as image via WhatsApp
+export const shareReceiptAsImage = async (data: ReceiptData, phoneNumber?: string): Promise<boolean> => {
+  try {
+    const imageBlob = await generateReceiptImage(data);
+    
+    if (!imageBlob) {
+      throw new Error('Failed to generate image');
+    }
+    
+    const file = new File([imageBlob], `Receipt_${data.receiptNumber}.png`, { type: 'image/png' });
+    
+    // Check if Web Share API supports files
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      const shareData: ShareData = {
+        title: `Receipt ${data.receiptNumber}`,
+        text: `Receipt from ${data.businessInfo.name}\nTotal: ${data.total.toLocaleString()} UGX`,
+        files: [file],
+      };
+      
+      await navigator.share(shareData);
+      return true;
+    }
+    
+    // Fallback: Download and open WhatsApp
+    const url = URL.createObjectURL(imageBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Receipt_${data.receiptNumber}.png`;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    // Open WhatsApp with message
+    const message = `Receipt ${data.receiptNumber} from ${data.businessInfo.name}. Total: ${data.total.toLocaleString()} UGX. Please find the receipt image attached.`;
+    const whatsappUrl = phoneNumber 
+      ? `https://wa.me/${phoneNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    
+    window.open(whatsappUrl, '_blank');
+    return true;
+  } catch (error) {
+    if ((error as Error).name !== 'AbortError') {
+      console.error('Share image failed:', error);
+    }
     return false;
   }
 };
