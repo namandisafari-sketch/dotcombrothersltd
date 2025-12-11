@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag, History } from "lucide-react";
+import { ScentLookupDialog } from "@/components/perfume/ScentLookupDialog";
 import { toast } from "sonner";
 import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
 import { ReceiptEditDialog } from "@/components/ReceiptEditDialog";
@@ -482,11 +483,19 @@ const PerfumePOS = () => {
         <Navigation />
 
         <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
-          <div className="mb-6">
-            <h2 className="text-2xl sm:text-3xl font-bold">Perfume Point of Sale</h2>
-            <p className="text-sm sm:text-base text-muted-foreground">
-              Create custom perfume blends and process sales
-            </p>
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold">Perfume Point of Sale</h2>
+              <p className="text-sm sm:text-base text-muted-foreground">
+                Create custom perfume blends and process sales
+              </p>
+            </div>
+            <ScentLookupDialog departmentId={selectedDepartmentId}>
+              <Button variant="outline" className="gap-2">
+                <History className="h-4 w-4" />
+                Customer Scent Lookup
+              </Button>
+            </ScentLookupDialog>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
