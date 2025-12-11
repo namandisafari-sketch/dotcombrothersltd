@@ -30,12 +30,20 @@ import {
   QrCode,
   Upload,
   BookOpen,
+  Building,
 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -53,7 +61,7 @@ export function AppSidebar() {
   const isCollapsed = state === "collapsed";
   const location = useLocation();
   const { user } = useAuth();
-  const { selectedDepartmentId } = useDepartment();
+  const { selectedDepartmentId, setSelectedDepartmentId } = useDepartment();
   const { isAdmin, isLoading: roleLoading } = useUserRole();
 
   const { data: userNavPermissions } = useQuery({
@@ -74,6 +82,21 @@ export function AppSidebar() {
       }
     },
     enabled: !!user,
+  });
+
+  // Fetch all departments for admin selector
+  const { data: allDepartments } = useQuery({
+    queryKey: ["all-departments"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: departments } = useQuery({
@@ -217,6 +240,33 @@ export function AppSidebar() {
       <SidebarContent className="px-2 pt-2">
         {!isCollapsed ? (
           <div className="space-y-6">
+            {/* Admin Department Selector */}
+            {isAdmin && allDepartments && allDepartments.length > 0 && (
+              <div className="px-2 pb-2 border-b border-border">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
+                  <Building className="h-3 w-3 inline mr-1" />
+                  Department
+                </label>
+                <Select
+                  value={selectedDepartmentId || ""}
+                  onValueChange={(value) => setSelectedDepartmentId(value)}
+                >
+                  <SelectTrigger className="w-full bg-background">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover z-50">
+                    {allDepartments.map((dept: any) => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                        {dept.is_mobile_money && " (Mobile Money)"}
+                        {dept.is_perfume_department && " (Perfume)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-1">
               <h3 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                 Main Menu

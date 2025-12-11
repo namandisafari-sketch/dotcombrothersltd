@@ -28,9 +28,9 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
     setSelectedDepartmentIdInternal(deptId);
   };
 
-  // Fetch all departments (excluding mobile money and perfume departments)
-  const { data: departments = [], isLoading } = useQuery({
-    queryKey: ["departments"],
+  // Fetch all departments (admins can see all, others see filtered)
+  const { data: allDepartments = [], isLoading } = useQuery({
+    queryKey: ["all-departments-context"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("departments")
@@ -38,35 +38,37 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
         .eq("is_active", true)
         .order("name", { ascending: true });
       if (error) throw error;
-      return (data || []).filter((d: any) => !d.is_mobile_money && !d.is_perfume_department);
+      return data || [];
     },
   });
 
+  // Filter departments for non-admin usage (exclude mobile money and perfume)
+  const departments = allDepartments.filter((d: any) => !d.is_mobile_money && !d.is_perfume_department);
+
   // Auto-assign department based on user's profile
   useEffect(() => {
-    if (isAdmin && departments.length > 0 && !selectedDepartmentId) {
+    if (isAdmin && allDepartments.length > 0 && !selectedDepartmentId) {
       // Admins can switch departments - only auto-assign if nothing is selected
       const savedDept = localStorage.getItem("selectedDepartmentId");
       
-      // Validate saved department isn't mobile money or perfume
-      const validDept = departments.find(d => d.id === savedDept);
+      // Validate saved department exists
+      const validDept = allDepartments.find(d => d.id === savedDept);
       
       if (validDept) {
         setSelectedDepartmentIdInternal(savedDept);
       } else {
-        // Clear invalid saved department
+        // Clear invalid saved department and use first regular department
         localStorage.removeItem("selectedDepartmentId");
-        setSelectedDepartmentIdInternal(departments[0].id);
+        const firstRegularDept = departments[0] || allDepartments[0];
+        if (firstRegularDept) {
+          setSelectedDepartmentIdInternal(firstRegularDept.id);
+        }
       }
     } else if (userDepartmentId && !selectedDepartmentId) {
       // Non-admins are LOCKED to their assigned department
-      // But only if it's not a mobile money or perfume department
-      const userDept = departments.find(d => d.id === userDepartmentId);
-      if (userDept) {
-        setSelectedDepartmentIdInternal(userDepartmentId);
-      }
+      setSelectedDepartmentIdInternal(userDepartmentId);
     }
-  }, [isAdmin, userDepartmentId, departments]);
+  }, [isAdmin, userDepartmentId, allDepartments, departments]);
 
   // Save admin's selection to localStorage
   useEffect(() => {
@@ -75,8 +77,8 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
     }
   }, [isAdmin, selectedDepartmentId]);
 
-  const selectedDepartment = departments.find(d => d.id === selectedDepartmentId) || null;
-  const isPerfumeDepartment = selectedDepartment?.name?.toUpperCase().includes("PERFUME") || false;
+  const selectedDepartment = allDepartments.find(d => d.id === selectedDepartmentId) || null;
+  const isPerfumeDepartment = selectedDepartment?.is_perfume_department === true || selectedDepartment?.name?.toUpperCase().includes("PERFUME") || false;
   const isMobileMoneyDepartment = selectedDepartment?.is_mobile_money === true;
 
   return (
