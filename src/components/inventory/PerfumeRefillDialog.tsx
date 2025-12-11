@@ -439,8 +439,8 @@ export function PerfumeRefillDialog({
           {/* Stock Summary */}
           <div className="mt-2 p-2 bg-muted/50 rounded-md flex items-center justify-between">
             <span className="text-sm font-medium">Total Available Stock:</span>
-            <Badge variant={getTotalAvailableStock() < 500 ? "destructive" : "secondary"}>
-              {getTotalAvailableStock().toLocaleString()} ml across {scentsWithStock.length} scents
+          <Badge variant={getTotalAvailableStock() < 500 ? "destructive" : "secondary"}>
+              {getTotalAvailableStock().toLocaleString()} ml across {scentsWithStock.filter(s => (s.stock_ml || 0) > 0).length} scents
             </Badge>
           </div>
 
