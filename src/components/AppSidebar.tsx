@@ -172,7 +172,8 @@ export function AppSidebar() {
     { path: "/settings", icon: Settings, label: "Settings", adminOnly: true },
   ];
 
-  const isPerfumeDepartment = userDepartment?.name?.toLowerCase().includes("perfume");
+  // Use department flags (is_perfume_department, is_mobile_money) instead of name matching
+  const isPerfumeDepartment = userDepartment?.is_perfume_department === true;
   const isMobileMoneyDepartment = userDepartment?.is_mobile_money === true;
 
   let navItems = allNavItems.filter((item) => {

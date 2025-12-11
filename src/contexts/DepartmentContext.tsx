@@ -78,7 +78,8 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
   }, [isAdmin, selectedDepartmentId]);
 
   const selectedDepartment = allDepartments.find(d => d.id === selectedDepartmentId) || null;
-  const isPerfumeDepartment = selectedDepartment?.is_perfume_department === true || selectedDepartment?.name?.toUpperCase().includes("PERFUME") || false;
+  // Use database flags only - don't rely on name matching
+  const isPerfumeDepartment = selectedDepartment?.is_perfume_department === true;
   const isMobileMoneyDepartment = selectedDepartment?.is_mobile_money === true;
 
   return (

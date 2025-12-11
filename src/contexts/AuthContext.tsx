@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -42,32 +42,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  
+  // Track if initial load is complete to prevent race conditions
+  const initialLoadComplete = useRef(false);
+  const fetchingRef = useRef(false);
 
   const fetchUserDetails = async (authUser: User): Promise<AuthUser | null> => {
+    // Prevent concurrent fetches
+    if (fetchingRef.current) {
+      return null;
+    }
+    
+    fetchingRef.current = true;
+    
     try {
-      // Get profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
+      // Get profile and role in parallel for efficiency
+      const [profileResult, roleResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle(),
+        supabase
+          .from('user_roles')
+          .select('role, department_id, nav_permissions')
+          .eq('user_id', authUser.id)
+          .maybeSingle()
+      ]);
 
-      // Get role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .maybeSingle();
+      const profile = profileResult.data;
+      const roleData = roleResult.data;
 
-      return {
+      const userDetails: AuthUser = {
         id: authUser.id,
         email: authUser.email || profile?.email,
         full_name: profile?.full_name || authUser.user_metadata?.full_name,
-        department_id: roleData?.department_id,
+        department_id: roleData?.department_id || undefined,
         is_active: profile?.is_active ?? true,
         role: roleData?.role || 'staff',
         nav_permissions: roleData?.nav_permissions || []
       };
+
+      console.log('Fetched user details:', {
+        id: userDetails.id,
+        role: userDetails.role,
+        department_id: userDetails.department_id,
+        nav_permissions: userDetails.nav_permissions
+      });
+
+      return userDetails;
     } catch (error) {
       console.error('Error fetching user details:', error);
       return {
@@ -75,45 +98,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: authUser.email,
         full_name: authUser.user_metadata?.full_name,
         is_active: true,
-        role: 'staff'
+        role: 'staff',
+        nav_permissions: []
       };
+    } finally {
+      fetchingRef.current = false;
     }
   };
 
   useEffect(() => {
-    // Set up auth state listener
+    let mounted = true;
+
+    // Check initial session first
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
+        console.log('Initial session check:', initialSession?.user?.email);
+        setSession(initialSession);
+        
+        if (initialSession?.user) {
+          const userDetails = await fetchUserDetails(initialSession.user);
+          if (mounted && userDetails) {
+            setUser(userDetails);
+          }
+        }
+        
+        initialLoadComplete.current = true;
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    // Set up auth state listener for subsequent changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         console.log('Auth state changed:', event, currentSession?.user?.email);
+        
+        if (!mounted) return;
+        
         setSession(currentSession);
         
-        if (currentSession?.user) {
-          // Use setTimeout to avoid blocking the auth state change
-          setTimeout(async () => {
+        // Only process auth changes after initial load is complete
+        // This prevents the race condition
+        if (!initialLoadComplete.current && event === 'INITIAL_SESSION') {
+          return;
+        }
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (currentSession?.user) {
+            // Small delay to ensure database triggers have completed
+            await new Promise(resolve => setTimeout(resolve, 100));
             const userDetails = await fetchUserDetails(currentSession.user);
-            setUser(userDetails);
-            setIsLoading(false);
-          }, 0);
-        } else {
+            if (mounted && userDetails) {
+              setUser(userDetails);
+            }
+          }
+        } else if (event === 'SIGNED_OUT') {
           setUser(null);
-          setIsLoading(false);
         }
       }
     );
 
-    // Check initial session
-    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
-      console.log('Initial session check:', initialSession?.user?.email);
-      setSession(initialSession);
-      
-      if (initialSession?.user) {
-        const userDetails = await fetchUserDetails(initialSession.user);
-        setUser(userDetails);
-      }
-      setIsLoading(false);
-    });
-
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -121,8 +177,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (authUser) {
+      fetchingRef.current = false; // Reset to allow refresh
       const userDetails = await fetchUserDetails(authUser);
-      setUser(userDetails);
+      if (userDetails) {
+        setUser(userDetails);
+      }
     }
   };
 
@@ -130,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
+    initialLoadComplete.current = false;
     navigate("/auth");
   };
 
