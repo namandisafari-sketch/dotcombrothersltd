@@ -50,14 +50,17 @@ export const PrintPreviewDialog = ({
 
   // Update iframe content when documentHtml changes
   useEffect(() => {
-    if (iframeRef.current && open) {
+    if (iframeRef.current && open && documentHtml) {
       const iframe = iframeRef.current;
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(documentHtml);
-        doc.close();
-      }
+      // Small delay to ensure iframe is mounted
+      setTimeout(() => {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.open();
+          doc.write(documentHtml);
+          doc.close();
+        }
+      }, 100);
     }
   }, [documentHtml, open]);
 
@@ -331,12 +334,14 @@ export const PrintPreviewDialog = ({
                   <iframe
                     ref={iframeRef}
                     title="Print Preview"
-                    className="w-full border-0"
+                    className="w-full border-0 bg-white"
                     style={{
                       width: getPreviewWidth(),
+                      height: getPreviewHeight(),
                       minHeight: getPreviewHeight(),
                       pointerEvents: "none",
                     }}
+                    srcDoc={documentHtml || "<html><body><p>No content to preview</p></body></html>"}
                   />
                 </div>
               </div>
