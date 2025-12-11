@@ -113,31 +113,38 @@ export function ScentLookupDialog({ departmentId, children }: ScentLookupDialogP
     try {
       setLoadingHistory(true);
 
-      // Fetch directly from sale_items with scent_mixture
-      const { data: purchases, error } = await supabase
-        .from("sale_items")
-        .select(`
-          id,
-          item_name,
-          name,
-          scent_mixture,
-          ml_amount,
-          quantity,
-          created_at,
-          sales!inner (
-            id,
-            receipt_number,
-            created_at,
-            customer_id,
-            department_id
-          )
-        `)
-        .eq("sales.customer_id", customer.id)
-        .not("scent_mixture", "is", null)
+      // First fetch sales for this customer
+      const { data: customerSales, error: salesError } = await supabase
+        .from("sales")
+        .select("id, receipt_number, created_at")
+        .eq("customer_id", customer.id)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20);
 
-      if (error) throw error;
+      if (salesError) throw salesError;
+
+      let purchases: any[] = [];
+
+      if (customerSales && customerSales.length > 0) {
+        const saleIds = customerSales.map(s => s.id);
+        
+        // Fetch sale_items with scent_mixture for these sales
+        const { data: items, error: itemsError } = await supabase
+          .from("sale_items")
+          .select("id, item_name, name, scent_mixture, ml_amount, quantity, created_at, sale_id")
+          .in("sale_id", saleIds)
+          .not("scent_mixture", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(10);
+
+        if (itemsError) throw itemsError;
+
+        // Map items with their sales data
+        purchases = (items || []).map(item => ({
+          ...item,
+          sales: customerSales.find(s => s.id === item.sale_id)
+        }));
+      }
 
       // Also fetch preferences
       const { data: preferences } = await supabase
@@ -147,11 +154,11 @@ export function ScentLookupDialog({ departmentId, children }: ScentLookupDialogP
         .maybeSingle();
 
       setScentData({
-        purchases: purchases || [],
+        purchases,
         preferences,
       });
 
-      if (!purchases || purchases.length === 0) {
+      if (purchases.length === 0) {
         toast.info("No scent history found for this customer");
       }
     } catch (error) {
