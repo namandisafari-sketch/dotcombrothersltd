@@ -85,79 +85,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    let initialCheckDone = false;
 
-    // Set up auth listener FIRST to catch all events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+    // Get initial session immediately
+    const getInitialSession = async () => {
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        
         if (!mounted) return;
-        
-        console.log('Auth event:', event);
-        
-        // Handle INITIAL_SESSION - this fires on page load/refresh
-        if (event === 'INITIAL_SESSION') {
-          setSession(currentSession);
-          if (currentSession?.user) {
-            const userDetails = await fetchUserDetails(currentSession.user);
-            if (mounted) {
-              setUser(userDetails);
-            }
-          }
-          if (mounted) {
-            initialCheckDone = true;
-            setIsLoading(false);
-          }
-          return;
-        }
         
         setSession(currentSession);
         
-        if (event === 'SIGNED_IN' && currentSession?.user) {
-          const userDetails = await fetchUserDetails(currentSession.user);
-          if (mounted) {
-            setUser(userDetails);
-            setIsLoading(false);
+        if (currentSession?.user) {
+          try {
+            const userDetails = await fetchUserDetails(currentSession.user);
+            if (mounted) setUser(userDetails);
+          } catch (e) {
+            console.error('Error fetching user details:', e);
           }
+        }
+      } catch (error) {
+        console.error('Error getting session:', error);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    getInitialSession();
+
+    // Listen for auth changes AFTER initial check
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, currentSession) => {
+        if (!mounted) return;
+        
+        console.log('Auth event:', event);
+        setSession(currentSession);
+        
+        if (event === 'SIGNED_IN' && currentSession?.user) {
+          // Use setTimeout to avoid Supabase deadlock
+          setTimeout(async () => {
+            if (!mounted) return;
+            try {
+              const userDetails = await fetchUserDetails(currentSession.user);
+              if (mounted) {
+                setUser(userDetails);
+                setIsLoading(false);
+              }
+            } catch (e) {
+              console.error('Error in SIGNED_IN:', e);
+              if (mounted) setIsLoading(false);
+            }
+          }, 0);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setIsLoading(false);
         } else if (event === 'TOKEN_REFRESHED' && currentSession?.user) {
-          const userDetails = await fetchUserDetails(currentSession.user);
-          if (mounted) {
-            setUser(userDetails);
-          }
+          setTimeout(async () => {
+            if (!mounted) return;
+            try {
+              const userDetails = await fetchUserDetails(currentSession.user);
+              if (mounted) setUser(userDetails);
+            } catch (e) {
+              console.error('Error in TOKEN_REFRESHED:', e);
+            }
+          }, 0);
         }
       }
     );
 
-    // Fallback: if INITIAL_SESSION doesn't fire within 3 seconds, check manually
-    const fallbackTimeout = setTimeout(async () => {
-      if (!mounted || initialCheckDone) return;
-      
-      console.log('Auth fallback check triggered');
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (!mounted || initialCheckDone) return;
-        
-        setSession(currentSession);
-        if (currentSession?.user) {
-          const userDetails = await fetchUserDetails(currentSession.user);
-          if (mounted) {
-            setUser(userDetails);
-          }
-        }
-      } catch (error) {
-        console.error('Error in fallback auth check:', error);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    }, 3000);
-
     return () => {
       mounted = false;
-      clearTimeout(fallbackTimeout);
       subscription.unsubscribe();
     };
   }, []);
