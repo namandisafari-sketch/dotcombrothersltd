@@ -75,22 +75,22 @@ export function PerfumeRefillDialog({
   const [selectedBottleSize, setSelectedBottleSize] = useState<string>("");
   const [selectedShopProducts, setSelectedShopProducts] = useState<Record<string, number>>({});
 
-  // Fetch scents with stock information
+  // Fetch scents with stock information (include global scents with no department)
   const { data: scentsWithStock = [] } = useQuery({
     queryKey: ["scents-with-stock", selectedDepartmentId],
     queryFn: async () => {
-      if (!selectedDepartmentId) return [];
       const { data, error } = await supabase
         .from("perfume_scents")
         .select("id, name, description, stock_ml")
-        .eq("department_id", selectedDepartmentId)
+        .or(selectedDepartmentId 
+          ? `department_id.eq.${selectedDepartmentId},department_id.is.null`
+          : `department_id.is.null`)
         .eq("is_active", true)
         .order("name");
       
       if (error) throw error;
       return data || [];
     },
-    enabled: !!selectedDepartmentId,
   });
 
   // Fetch frequently used scents (from recent sales)
