@@ -161,13 +161,34 @@ export const reduceStock = async (
             if (scent.ml > 0) {
               console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId}`);
               
-              const { data: scentByName, error: nameError } = await supabase
+              // First try to find in department, then global
+              let scentByName = null;
+              let nameError = null;
+              
+              // Try department-specific first
+              const { data: deptScent, error: deptError } = await supabase
                 .from("perfume_scents")
                 .select("id, name, stock_ml, department_id")
                 .ilike("name", scent.scent)
-                .or(`department_id.eq.${departmentId},department_id.is.null`)
+                .eq("department_id", departmentId)
                 .limit(1)
                 .maybeSingle();
+              
+              if (deptScent) {
+                scentByName = deptScent;
+              } else {
+                // Try global scent (null department)
+                const { data: globalScent, error: globalError } = await supabase
+                  .from("perfume_scents")
+                  .select("id, name, stock_ml, department_id")
+                  .ilike("name", scent.scent)
+                  .is("department_id", null)
+                  .limit(1)
+                  .maybeSingle();
+                  
+                scentByName = globalScent;
+                nameError = globalError;
+              }
               
               if (nameError) {
                 console.error(`❌ Error searching scent by name:`, nameError);
