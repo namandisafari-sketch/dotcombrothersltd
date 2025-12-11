@@ -4,6 +4,7 @@ import Navigation from "@/components/Navigation";
 import { DepartmentManager } from "@/components/DepartmentManager";
 import { DataBackup } from "@/components/DataBackup";
 import { MobileMoneySettings } from "@/components/settings/MobileMoneySettings";
+import { ReceiptPreview } from "@/components/settings/ReceiptPreview";
 import { DemoModeToggle } from "@/components/DemoModeToggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -419,6 +420,17 @@ const Settings = () => {
                     </CardContent>
                   </Card>
                 )}
+
+                <ReceiptPreview 
+                  businessInfo={{
+                    name: formData.business_name,
+                    address: formData.business_address,
+                    phone: formData.business_phone,
+                    email: formData.business_email,
+                    logo: formData.logo_url,
+                    seasonalRemark: formData.seasonal_remark,
+                  }}
+                />
 
                 <Card>
                   <CardHeader>
