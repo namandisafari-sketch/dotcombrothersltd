@@ -43,7 +43,8 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
       <style>
         @media print {
           body { margin: 0; padding: 10px; }
-          @page { margin: 0; }
+          @page { margin: 0; size: auto; }
+          .back-page { page-break-before: avoid !important; }
         }
         body {
           font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -292,34 +293,33 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
         `}
       </div>
       
-      <!-- Back Page - System Info -->
-      <div class="back-page" style="page-break-before: always; min-height: 200px; padding: 20px 0; margin-top: 20px; border-top: 2px dashed #000;">
+      <!-- Back Page - System Info (continuous, no page break) -->
+      <div class="back-page" style="min-height: 150px; padding: 15px 0; margin-top: 15px; border-top: 2px dashed #000;">
         <div style="text-align: center; font-size: 10px;">
-          <div style="font-weight: bold; font-size: 12px; margin-bottom: 10px; color: #333;">✂️ BACK PAGE ✂️</div>
-          <div style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">POWERED BY</div>
-          <div style="font-weight: bold; font-size: 16px; margin-bottom: 5px; color: #000;">KABEJJA SYSTEMS</div>
-          <div style="margin-bottom: 15px; font-size: 11px;">In partnership with DOTCOM BROTHERS LTD</div>
+          <div style="font-weight: bold; font-size: 11px; margin-bottom: 8px; color: #333;">--- POWERED BY ---</div>
+          <div style="font-weight: bold; font-size: 14px; margin-bottom: 3px; color: #000;">KABEJJA SYSTEMS</div>
+          <div style="margin-bottom: 12px; font-size: 10px;">In partnership with DOTCOM BROTHERS LTD</div>
           
-          <div style="display: flex; justify-content: center; gap: 15px; margin: 15px 0;">
+          <div style="display: flex; justify-content: center; gap: 12px; margin: 12px 0;">
             <div style="text-align: center;">
-              <div style="font-weight: bold; font-size: 9px; margin-bottom: 5px;">Scan to Visit Website</div>
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://www.kabejjasystems.store" 
+              <div style="font-weight: bold; font-size: 8px; margin-bottom: 4px;">Visit Website</div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=https://www.kabejjasystems.store" 
                    alt="Website QR" 
-                   style="width: 80px; height: 80px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
-              <div style="font-size: 8px; margin-top: 3px;">🌐 kabejjasystems.store</div>
+                   style="width: 70px; height: 70px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
+              <div style="font-size: 7px; margin-top: 2px;">kabejjasystems.store</div>
             </div>
             <div style="text-align: center;">
-              <div style="font-weight: bold; font-size: 9px; margin-bottom: 5px;">Scan to WhatsApp</div>
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://wa.me/256745368426" 
+              <div style="font-weight: bold; font-size: 8px; margin-bottom: 4px;">WhatsApp Us</div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=https://wa.me/256745368426" 
                    alt="WhatsApp QR" 
-                   style="width: 80px; height: 80px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
-              <div style="font-size: 8px; margin-top: 3px;">📞 +256745368426</div>
+                   style="width: 70px; height: 70px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
+              <div style="font-size: 7px; margin-top: 2px;">+256745368426</div>
             </div>
           </div>
           
-          <div style="border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px;">
-            <div style="font-weight: bold; margin-bottom: 3px;">Talk to Earn for POS Systems!</div>
-            <div style="font-size: 9px; color: #555;">Custom software solutions for your business</div>
+          <div style="border-top: 1px dashed #000; padding-top: 8px; margin-top: 8px;">
+            <div style="font-weight: bold; margin-bottom: 2px; font-size: 9px;">Talk to Earn for POS Systems!</div>
+            <div style="font-size: 8px; color: #555;">Custom software solutions for your business</div>
           </div>
         </div>
       </div>
@@ -330,7 +330,7 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
 
 export const printReceipt = async (receiptData: ReceiptData, previewOnly: boolean = false): Promise<boolean> => {
   return new Promise((resolve) => {
-    const printWindow = window.open('', '_blank', 'width=300,height=600');
+    const printWindow = window.open('', '_blank', 'width=350,height=700');
     
     if (!printWindow) {
       console.error('Could not open print window');
@@ -338,7 +338,8 @@ export const printReceipt = async (receiptData: ReceiptData, previewOnly: boolea
       return;
     }
 
-    printWindow.document.write(generateReceiptHTML(receiptData));
+    const htmlContent = generateReceiptHTML(receiptData);
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
 
     if (previewOnly) {
@@ -346,19 +347,48 @@ export const printReceipt = async (receiptData: ReceiptData, previewOnly: boolea
       return;
     }
 
-    printWindow.onload = () => {
-      setTimeout(() => {
+    // Wait for all images to load before printing
+    const waitForImages = () => {
+      const images = printWindow.document.querySelectorAll('img');
+      const imagePromises = Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise<void>((resolveImg) => {
+          img.onload = () => resolveImg();
+          img.onerror = () => resolveImg(); // Continue even if image fails
+        });
+      });
+      return Promise.all(imagePromises);
+    };
+
+    printWindow.onload = async () => {
+      try {
+        // Wait for images to load with timeout
+        await Promise.race([
+          waitForImages(),
+          new Promise(r => setTimeout(r, 2000)) // 2 second timeout
+        ]);
+        
+        // Small delay for rendering
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.onafterprint = () => {
+            printWindow.close();
+            resolve(true);
+          };
+          // Fallback if onafterprint doesn't fire
+          setTimeout(() => {
+            printWindow.close();
+            resolve(true);
+          }, 2000);
+        }, 500);
+      } catch (err) {
+        console.error('Error waiting for images:', err);
         printWindow.print();
-        printWindow.onafterprint = () => {
-          printWindow.close();
-          resolve(true);
-        };
-        // Fallback if onafterprint doesn't fire
         setTimeout(() => {
           printWindow.close();
           resolve(true);
-        }, 1000);
-      }, 250);
+        }, 2000);
+      }
     };
   });
 };

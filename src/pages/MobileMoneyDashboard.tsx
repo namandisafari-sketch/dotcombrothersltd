@@ -4,13 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, TrendingUp, Users, ShoppingCart, Package } from "lucide-react";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { format } from "date-fns";
-import { useSalesRealtime } from "@/hooks/useRealtimeUpdates";
+import { useDashboardRealtime } from "@/hooks/useRealtimeUpdates";
 
 const MobileMoneyDashboard = () => {
   const { selectedDepartmentId } = useDepartment();
   
-  // Enable realtime updates
-  useSalesRealtime(selectedDepartmentId);
+  // Enable realtime updates with toast notifications
+  useDashboardRealtime(selectedDepartmentId);
 
   const { data: todaySales = [] } = useQuery({
     queryKey: ["mobile-money-sales-today", selectedDepartmentId],

@@ -10,7 +10,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { format } from "date-fns";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { useState } from "react";
-import { useSalesRealtime, useInventoryRealtime } from "@/hooks/useRealtimeUpdates";
+import { useDashboardRealtime, useInventoryRealtime } from "@/hooks/useRealtimeUpdates";
 
 export default function PerfumeDashboard() {
   const { isAdmin, departmentId: userDepartmentId, isLoading: roleLoading } = useUserRole();
@@ -19,8 +19,8 @@ export default function PerfumeDashboard() {
   // Admins can select any perfume department, others use their assigned department
   const departmentId = isAdmin && selectedDepartmentId ? selectedDepartmentId : userDepartmentId;
   
-  // Enable realtime updates
-  useSalesRealtime(departmentId);
+  // Enable realtime updates with toast notifications
+  useDashboardRealtime(departmentId);
   useInventoryRealtime(departmentId);
 
   // Check if user's department is a perfume department

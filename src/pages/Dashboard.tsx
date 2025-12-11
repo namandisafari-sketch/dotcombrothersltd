@@ -6,14 +6,14 @@ import Navigation from "@/components/Navigation";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
-import { useSalesRealtime, useInventoryRealtime } from "@/hooks/useRealtimeUpdates";
+import { useDashboardRealtime, useInventoryRealtime } from "@/hooks/useRealtimeUpdates";
 
 const Dashboard = () => {
   const { isAdmin } = useUserRole();
   const { selectedDepartmentId, selectedDepartment, isPerfumeDepartment } = useDepartment();
   
-  // Enable realtime updates
-  useSalesRealtime(selectedDepartmentId);
+  // Enable realtime updates with toast notifications
+  useDashboardRealtime(selectedDepartmentId);
   useInventoryRealtime(selectedDepartmentId);
 
   // Today's sales - using Supabase directly

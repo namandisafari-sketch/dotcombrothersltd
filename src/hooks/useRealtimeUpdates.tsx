@@ -1,22 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 interface UseRealtimeUpdatesOptions {
   tables?: string[];
   departmentId?: string | null;
   queryKeys?: string[][];
+  showToasts?: boolean;
 }
 
 export const useRealtimeUpdates = ({ 
   tables = ['sales', 'products', 'expenses', 'credits', 'reconciliations'],
   departmentId,
-  queryKeys = []
+  queryKeys = [],
+  showToasts = false
 }: UseRealtimeUpdatesOptions = {}) => {
   const queryClient = useQueryClient();
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
     console.log('Setting up realtime subscriptions for:', tables);
+
+    // Small delay to prevent initial load notifications
+    const initTimer = setTimeout(() => {
+      isInitializedRef.current = true;
+    }, 3000);
 
     const channels = tables.map(table => {
       const channel = supabase
@@ -28,8 +37,29 @@ export const useRealtimeUpdates = ({
             schema: 'public',
             table: table,
           },
-          (payload) => {
+          async (payload) => {
             console.log(`Realtime ${table} change:`, payload.eventType, payload);
+            
+            // Show toast notification for new sales
+            if (showToasts && isInitializedRef.current && table === 'sales' && payload.eventType === 'INSERT') {
+              const newSale = payload.new as any;
+              let departmentName = 'Unknown';
+              
+              // Fetch department name
+              if (newSale.department_id) {
+                const { data: dept } = await supabase
+                  .from('departments')
+                  .select('name')
+                  .eq('id', newSale.department_id)
+                  .single();
+                if (dept) departmentName = dept.name;
+              }
+              
+              toast({
+                title: "🎉 New Sale!",
+                description: `${departmentName}: ${newSale.total?.toLocaleString() || 0} UGX - ${newSale.payment_method || 'Cash'}`,
+              });
+            }
             
             // Invalidate all queries that might be affected
             queryClient.invalidateQueries({ queryKey: [table] });
@@ -63,18 +93,20 @@ export const useRealtimeUpdates = ({
 
     return () => {
       console.log('Cleaning up realtime subscriptions');
+      clearTimeout(initTimer);
       channels.forEach(channel => {
         supabase.removeChannel(channel);
       });
     };
-  }, [queryClient, tables.join(','), departmentId, queryKeys.length]);
+  }, [queryClient, tables.join(','), departmentId, queryKeys.length, showToasts]);
 };
 
-// Simplified hook for sales-focused pages
-export const useSalesRealtime = (departmentId?: string | null) => {
+// Simplified hook for sales-focused pages with toast notifications
+export const useSalesRealtime = (departmentId?: string | null, showToasts: boolean = true) => {
   useRealtimeUpdates({
     tables: ['sales', 'sale_items'],
     departmentId,
+    showToasts,
     queryKeys: [
       ['today-sales', departmentId || ''],
       ['recent-sales', departmentId || ''],
@@ -98,9 +130,24 @@ export const useInventoryRealtime = (departmentId?: string | null) => {
 };
 
 // Hook for financial pages
-export const useFinancialRealtime = (departmentId?: string | null) => {
+export const useFinancialRealtime = (departmentId?: string | null, showToasts: boolean = false) => {
   useRealtimeUpdates({
     tables: ['sales', 'expenses', 'credits', 'reconciliations'],
     departmentId,
+    showToasts,
+  });
+};
+
+// Hook for dashboards with all notifications enabled
+export const useDashboardRealtime = (departmentId?: string | null) => {
+  useRealtimeUpdates({
+    tables: ['sales', 'products', 'expenses', 'credits'],
+    departmentId,
+    showToasts: true,
+    queryKeys: [
+      ['today-sales', departmentId || ''],
+      ['recent-sales', departmentId || ''],
+      ['low-stock', departmentId || ''],
+    ]
   });
 };
