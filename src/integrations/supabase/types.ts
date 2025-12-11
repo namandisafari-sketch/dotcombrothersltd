@@ -714,27 +714,39 @@ export type Database = {
       perfume_scents: {
         Row: {
           created_at: string | null
+          current_weight_g: number | null
+          density: number | null
           department_id: string | null
           description: string | null
+          empty_bottle_weight_g: number | null
           id: string
           is_active: boolean | null
           name: string
+          stock_ml: number | null
         }
         Insert: {
           created_at?: string | null
+          current_weight_g?: number | null
+          density?: number | null
           department_id?: string | null
           description?: string | null
+          empty_bottle_weight_g?: number | null
           id?: string
           is_active?: boolean | null
           name: string
+          stock_ml?: number | null
         }
         Update: {
           created_at?: string | null
+          current_weight_g?: number | null
+          density?: number | null
           department_id?: string | null
           description?: string | null
+          empty_bottle_weight_g?: number | null
           id?: string
           is_active?: boolean | null
           name?: string
+          stock_ml?: number | null
         }
         Relationships: [
           {
