@@ -85,7 +85,7 @@ export default function PerfumeInventory() {
   const [productForm, setProductForm] = useState({
     name: "",
     description: "",
-    brand: "bottle" as string,
+    brand: "perfume" as string,
     bottle_size_ml: 0,
     barcode: "",
     cost_price: 0,
@@ -630,9 +630,9 @@ export default function PerfumeInventory() {
 
           {/* Shop Products Tab */}
           <TabsContent value="shop-products" className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <p className="text-sm text-muted-foreground">
-                Manage bottles, bags, packaging materials, and other perfume shop products
+                Manage all perfume shop products - body sprays, lotions, accessories, bottles, and more
               </p>
               <Button onClick={() => { resetProductForm(); setProductDialogOpen(true); }}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -724,7 +724,7 @@ export default function PerfumeInventory() {
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No shop products yet. Add bottles, bags, and packaging materials.</p>
+                  <p>No products yet. Add perfumes, body sprays, lotions, bottles, accessories, and more.</p>
                 </CardContent>
               </Card>
             )}
@@ -852,11 +852,19 @@ export default function PerfumeInventory() {
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bottle">Bottle (Empty)</SelectItem>
+                    <SelectContent className="bg-popover border shadow-lg z-50">
                       <SelectItem value="perfume">Branded Perfume</SelectItem>
-                      <SelectItem value="bag">Bag</SelectItem>
-                      <SelectItem value="packaging">Packaging</SelectItem>
+                      <SelectItem value="body_spray">Body Spray</SelectItem>
+                      <SelectItem value="body_lotion">Body Lotion</SelectItem>
+                      <SelectItem value="roll_on">Roll-On</SelectItem>
+                      <SelectItem value="air_freshener">Air Freshener</SelectItem>
+                      <SelectItem value="diffuser">Diffuser / Oil Burner</SelectItem>
+                      <SelectItem value="bottle">Empty Bottle</SelectItem>
+                      <SelectItem value="tester">Tester / Sample</SelectItem>
+                      <SelectItem value="gift_set">Gift Set</SelectItem>
+                      <SelectItem value="bag">Bag / Pouch</SelectItem>
+                      <SelectItem value="packaging">Packaging Material</SelectItem>
+                      <SelectItem value="accessory">Accessory</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
