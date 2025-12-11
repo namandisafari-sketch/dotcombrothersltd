@@ -11,10 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Droplet, Scale, Plus, Edit, AlertCircle, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Droplet, Scale, Plus, Edit, AlertCircle, RefreshCw, Check, ChevronsUpDown, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { PERFUME_SCENTS } from "@/constants/perfumeScents";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface ScentStockManagerProps {
   departmentId: string;
@@ -29,10 +31,12 @@ interface Scent {
   current_weight_g: number | null;
   density: number | null;
   is_active: boolean | null;
+  department_id: string | null;
 }
 
 export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useUserRole();
   const [selectedScent, setSelectedScent] = useState<Scent | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [addScentDialogOpen, setAddScentDialogOpen] = useState(false);
@@ -46,6 +50,7 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
   // Form states for new scent - now using dropdown selection
   const [newScentName, setNewScentName] = useState("");
   const [newScentDescription, setNewScentDescription] = useState("");
+  const [newScentDepartmentId, setNewScentDepartmentId] = useState<string>(departmentId);
 
   const { data: scents = [], isLoading } = useQuery({
     queryKey: ["scent-stock", departmentId],
@@ -61,6 +66,23 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
       return (data || []) as Scent[];
     },
     enabled: !!departmentId,
+  });
+
+  // Fetch departments for admin dropdown
+  const { data: departments = [] } = useQuery({
+    queryKey: ["perfume-departments-for-scents"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id, name")
+        .eq("is_active", true)
+        .or("is_perfume_department.eq.true,name.ilike.%perfume%")
+        .order("name");
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isAdmin,
   });
 
   // Calculate ML from weight
@@ -111,12 +133,15 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
   // Add new scent mutation
   const addScentMutation = useMutation({
     mutationFn: async () => {
+      // Use null for global scent if "global" is selected
+      const targetDepartmentId = newScentDepartmentId === "global" ? null : newScentDepartmentId;
+      
       const { error } = await supabase
         .from("perfume_scents")
         .insert({
           name: newScentName,
           description: newScentDescription || null,
-          department_id: departmentId,
+          department_id: targetDepartmentId,
           stock_ml: 0,
           empty_bottle_weight_g: 0,
           current_weight_g: 0,
@@ -132,6 +157,7 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
       setAddScentDialogOpen(false);
       setNewScentName("");
       setNewScentDescription("");
+      setNewScentDepartmentId(departmentId);
     },
     onError: (error) => {
       console.error("Error adding scent:", error);
@@ -259,7 +285,15 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <h4 className="font-medium">{scent.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium">{scent.name}</h4>
+                        {!scent.department_id && (
+                          <Badge variant="outline" className="text-xs">
+                            <Globe className="w-3 h-3 mr-1" />
+                            Global
+                          </Badge>
+                        )}
+                      </div>
                       {scent.description && (
                         <p className="text-xs text-muted-foreground">{scent.description}</p>
                       )}
@@ -450,6 +484,34 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
                 {PERFUME_SCENTS.length - scents.length} scents available to add
               </p>
             </div>
+
+            {/* Department selector for admins */}
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <Select value={newScentDepartmentId} onValueChange={setNewScentDepartmentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4" />
+                        Global (All Departments)
+                      </div>
+                    </SelectItem>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Global scents are available to all perfume departments
+                </p>
+              </div>
+            )}
             
             <div className="space-y-2">
               <Label>Description (optional)</Label>
@@ -462,7 +524,7 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
           </div>
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddScentDialogOpen(false); setNewScentName(""); }}>
+            <Button variant="outline" onClick={() => { setAddScentDialogOpen(false); setNewScentName(""); setNewScentDepartmentId(departmentId); }}>
               Cancel
             </Button>
             <Button 
