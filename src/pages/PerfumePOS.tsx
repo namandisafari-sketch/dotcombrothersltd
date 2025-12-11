@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag, History } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag, History, AlertTriangle } from "lucide-react";
 import { ScentLookupDialog } from "@/components/perfume/ScentLookupDialog";
 import { toast } from "sonner";
 import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
@@ -60,6 +61,7 @@ const PerfumePOS = () => {
     email: "",
     address: "",
   });
+  const [showNoCustomerWarning, setShowNoCustomerWarning] = useState(false);
 
   // Fetch perfume products (exclude Oil Perfume master stock)
   const { data: perfumeProducts = [] } = useQuery({
@@ -235,6 +237,15 @@ const PerfumePOS = () => {
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const total = subtotal;
+
+  // Handler to check if customer is selected before completing sale
+  const handleCompleteSale = () => {
+    if (!selectedCustomer && cart.some(item => item.type === "perfume" || item.scentMixture)) {
+      setShowNoCustomerWarning(true);
+      return;
+    }
+    completeSaleMutation.mutate();
+  };
 
   const completeSaleMutation = useMutation({
     mutationFn: async () => {
@@ -781,6 +792,7 @@ const PerfumePOS = () => {
                     <div className="flex gap-2">
                       <Select value={selectedCustomer} onValueChange={(value) => {
                         setSelectedCustomer(value);
+                        setSelectedCustomerId(value);
                         const customer = customers.find(c => c.id === value);
                         if (customer) {
                           setCustomerName(customer.name);
@@ -832,7 +844,7 @@ const PerfumePOS = () => {
                   </div>
 
                   <Button
-                    onClick={() => completeSaleMutation.mutate()}
+                    onClick={handleCompleteSale}
                     disabled={cart.length === 0 || completeSaleMutation.isPending}
                     className="w-full"
                     size="lg"
@@ -932,6 +944,32 @@ const PerfumePOS = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* No Customer Warning Dialog */}
+      <AlertDialog open={showNoCustomerWarning} onOpenChange={setShowNoCustomerWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              No Customer Selected
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              You haven't linked a customer to this sale. Without selecting a customer, 
+              their scent preferences won't be saved and you won't be able to look up 
+              their purchase history later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go Back & Select Customer</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setShowNoCustomerWarning(false);
+              completeSaleMutation.mutate();
+            }}>
+              Continue Without Customer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
