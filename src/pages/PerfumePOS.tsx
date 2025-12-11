@@ -34,8 +34,9 @@ interface CartItem {
   totalMl?: number;
   trackingType?: string;
   subtotal: number;
-  selectedScents?: Array<{ scent: string; ml: number }>;
+  selectedScents?: Array<{ scent: string; ml: number; scentId?: string }>;
   pricePerMl?: number;
+  isPerfumeRefill?: boolean;
 }
 
 const PerfumePOS = () => {

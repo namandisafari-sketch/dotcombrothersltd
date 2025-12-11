@@ -73,6 +73,7 @@ interface CartItem {
   trackingType?: string;
   volumeUnit?: string;
   isPerfumeRefill?: boolean;
+  type?: string;
   totalMl?: number;
   selectedScents?: ScentUsage[];
 }
@@ -114,9 +115,9 @@ export const reduceStock = async (
       if (item.variantId) {
         console.log(`Deducting variant stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceVariantStock(item.variantId, item.quantity);
-      } else if (item.isPerfumeRefill && item.totalMl) {
+      } else if ((item.isPerfumeRefill || item.type === "perfume") && item.totalMl) {
         // Deduct from master Oil Perfume total_ml only (scent division is manual)
-        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from total`);
+        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from Oil Perfume total`);
         const { data: masterPerfume } = await supabase
           .from("products")
           .select("id, total_ml, name")
@@ -130,10 +131,18 @@ export const reduceStock = async (
           const newMl = Math.max(0, currentMl - item.totalMl);
           console.log(`Oil Perfume: Current=${currentMl}ml, Deducting=${item.totalMl}ml, New=${newMl}ml`);
           
-          await supabase
+          const { error } = await supabase
             .from("products")
             .update({ total_ml: newMl })
             .eq("id", masterPerfume.id);
+          
+          if (error) {
+            console.error("Error updating Oil Perfume stock:", error);
+          } else {
+            console.log(`Oil Perfume stock updated successfully to ${newMl}ml`);
+          }
+        } else {
+          console.warn("Master Oil Perfume product not found for department:", departmentId);
         }
       } else if (item.productId) {
         console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
