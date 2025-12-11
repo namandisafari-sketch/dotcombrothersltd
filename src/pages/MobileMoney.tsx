@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { localApi } from "@/lib/localApi";
+
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,13 +28,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 const MobileMoney = () => {
   const queryClient = useQueryClient();
   
-  // Fetch current user's profile for cashier name
+  // Fetch current user's profile for cashier name using Supabase
   const { data: userProfile } = useQuery({
-    queryKey: ["current-user-profile"],
+    queryKey: ["current-user-profile-supabase"],
     queryFn: async () => {
-      const profiles = await localApi.profiles.getAll();
-      // Assuming current user's profile is available via auth context
-      return profiles[0] || null;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data;
     },
   });
 
@@ -78,41 +86,46 @@ const MobileMoney = () => {
   const [customPriceDialog, setCustomPriceDialog] = useState<{ open: boolean; index: number; currentPrice: number }>({ open: false, index: -1, currentPrice: 0 });
   const [customPriceValue, setCustomPriceValue] = useState("");
 
-  // Get user's department first
+  // Get user's role and department using Supabase
   const { data: userDepartment } = useQuery({
-    queryKey: ["user-department"],
+    queryKey: ["user-department-supabase"],
     queryFn: async () => {
-      const profiles = await localApi.profiles.getAll();
-      const roles = await localApi.userRoles.getAll();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { departmentId: null, isAdmin: false };
       
-      // Get first profile (current user)
-      const profile = profiles[0];
-      const userRole = roles[0];
+      const { data: userRole } = await supabase
+        .from("user_roles")
+        .select("role, department_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
       
       return {
-        departmentId: profile?.department_id,
+        departmentId: userRole?.department_id || null,
         isAdmin: userRole?.role === "admin"
       };
     },
   });
 
-  // Get all mobile money departments (filtered by user's department if not admin)
+  // Get all mobile money departments using Supabase
   const { data: mobileMoneyDepts } = useQuery({
-    queryKey: ["mobile-money-departments", userDepartment?.departmentId, userDepartment?.isAdmin],
+    queryKey: ["mobile-money-departments-supabase", userDepartment?.departmentId, userDepartment?.isAdmin],
     queryFn: async () => {
-      const departments = await localApi.departments.getAll();
-      
-      // Filter for mobile money departments
-      let filtered = departments.filter((d: any) => d.is_mobile_money);
+      let query = supabase
+        .from("departments")
+        .select("*")
+        .eq("is_mobile_money", true)
+        .eq("is_active", true);
       
       // Non-admin users can only see their own department
       if (!userDepartment?.isAdmin && userDepartment?.departmentId) {
-        filtered = filtered.filter((d: any) => d.id === userDepartment.departmentId);
+        query = query.eq("id", userDepartment.departmentId);
       }
       
-      return filtered;
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
     },
-    enabled: !!userDepartment,
+    enabled: userDepartment !== undefined,
   });
 
   // Selected department state
@@ -127,83 +140,126 @@ const MobileMoney = () => {
 
   const mobileMoneyDept = mobileMoneyDepts?.find(d => d.id === selectedDeptId);
 
-  // Fetch department settings for receipt
+  // Fetch department settings for receipt using Supabase
   const { data: deptSettings } = useQuery({
-    queryKey: ["department-settings", selectedDeptId],
+    queryKey: ["department-settings-supabase", selectedDeptId],
     queryFn: async () => {
       if (!selectedDeptId) return null;
-      const settings = await localApi.settings.getDepartmentSettings(selectedDeptId);
-      return settings;
-    },
-    enabled: !!selectedDeptId,
-  });
-
-  // Fetch services for selected department
-  const { data: services } = useQuery({
-    queryKey: ["mobile-money-services", selectedDeptId],
-    queryFn: async () => {
-      if (!selectedDeptId) return [];
-      const data = await localApi.services.getAll(selectedDeptId);
-      return data || [];
-    },
-    enabled: !!selectedDeptId,
-  });
-
-  // Fetch products for selected department
-  const { data: products } = useQuery({
-    queryKey: ["mobile-money-products", selectedDeptId],
-    queryFn: async () => {
-      if (!selectedDeptId) return [];
-      const data = await localApi.products.getAll(selectedDeptId);
-      return data || [];
-    },
-    enabled: !!selectedDeptId,
-  });
-
-  // Fetch sales data for reports
-  const { data: salesData } = useQuery({
-    queryKey: ["mobile-money-sales", selectedDeptId],
-    queryFn: async () => {
-      if (!selectedDeptId) return [];
-      const data = await localApi.sales.getAll({ departmentId: selectedDeptId });
       
-      // Limit to 100 most recent
-      return data.slice(0, 100);
+      // Try department-specific settings first
+      const { data: deptSpecific } = await supabase
+        .from("settings")
+        .select("*")
+        .eq("department_id", selectedDeptId)
+        .maybeSingle();
+      
+      if (deptSpecific) return deptSpecific;
+      
+      // Fallback to global settings
+      const { data: globalSettings } = await supabase
+        .from("settings")
+        .select("*")
+        .is("department_id", null)
+        .maybeSingle();
+      
+      return globalSettings;
     },
     enabled: !!selectedDeptId,
   });
 
-  // Fetch credits for reports
-  const { data: creditsData } = useQuery({
-    queryKey: ["mobile-money-credits", selectedDeptId],
+  // Fetch services for selected department using Supabase
+  const { data: services } = useQuery({
+    queryKey: ["mobile-money-services-supabase", selectedDeptId],
     queryFn: async () => {
       if (!selectedDeptId) return [];
-      const data = await localApi.credits.getAll({ department_id: selectedDeptId, is_admin: false });
+      const { data, error } = await supabase
+        .from("services")
+        .select("*")
+        .eq("department_id", selectedDeptId)
+        .eq("is_active", true);
+      if (error) throw error;
       return data || [];
     },
     enabled: !!selectedDeptId,
   });
 
-  // Create/Update service mutation
+  // Fetch products for selected department using Supabase
+  const { data: products } = useQuery({
+    queryKey: ["mobile-money-products-supabase", selectedDeptId],
+    queryFn: async () => {
+      if (!selectedDeptId) return [];
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("department_id", selectedDeptId)
+        .eq("is_active", true);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedDeptId,
+  });
+
+  // Fetch sales data for reports using Supabase
+  const { data: salesData } = useQuery({
+    queryKey: ["mobile-money-sales-supabase", selectedDeptId],
+    queryFn: async () => {
+      if (!selectedDeptId) return [];
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*, sale_items(*)")
+        .eq("department_id", selectedDeptId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedDeptId,
+  });
+
+  // Fetch credits for reports using Supabase
+  const { data: creditsData } = useQuery({
+    queryKey: ["mobile-money-credits-supabase", selectedDeptId],
+    queryFn: async () => {
+      if (!selectedDeptId) return [];
+      const { data, error } = await supabase
+        .from("credits")
+        .select("*")
+        .eq("department_id", selectedDeptId);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedDeptId,
+  });
+
+  // Create/Update service mutation using Supabase
   const serviceMutation = useMutation({
     mutationFn: async (service: any) => {
       if (editingService) {
-        await localApi.services.update(editingService.id, {
-          name: service.service_name,
-          base_price: service.service_price,
-          description: service.description,
-        });
+        const { error } = await supabase
+          .from("services")
+          .update({
+            name: service.service_name,
+            base_price: service.service_price,
+            price: service.service_price,
+            description: service.description,
+          })
+          .eq("id", editingService.id);
+        if (error) throw error;
       } else {
-        await localApi.services.create({
-          name: service.service_name,
-          base_price: service.service_price,
-          description: service.description,
-          department_id: selectedDeptId,
-        });
+        const { error } = await supabase
+          .from("services")
+          .insert({
+            name: service.service_name,
+            base_price: service.service_price,
+            price: service.service_price,
+            description: service.description,
+            department_id: selectedDeptId,
+          });
+        if (error) throw error;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mobile-money-services"] });
+      queryClient.invalidateQueries({ queryKey: ["mobile-money-services-supabase"] });
       toast.success(editingService ? "Service updated" : "Service created");
       setServiceDialogOpen(false);
       setServiceForm({ service_name: "", service_price: 0, description: "" });
@@ -215,13 +271,14 @@ const MobileMoney = () => {
     },
   });
 
-  // Delete service mutation
+  // Delete service mutation using Supabase
   const deleteServiceMutation = useMutation({
     mutationFn: async (id: string) => {
-      await localApi.services.delete(id);
+      const { error } = await supabase.from("services").delete().eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mobile-money-services"] });
+      queryClient.invalidateQueries({ queryKey: ["mobile-money-services-supabase"] });
       toast.success("Service deleted");
     },
     onError: () => {
@@ -229,16 +286,17 @@ const MobileMoney = () => {
     },
   });
 
+  // Product mutation using Supabase
   const productMutation = useMutation({
     mutationFn: async (product: any) => {
-      // Convert empty strings to null for tracking fields
       const cleanedProduct = {
         name: product.name,
         unit: product.unit,
         cost_price: product.cost_price,
         selling_price: product.selling_price,
-        current_stock: product.current_stock,
-        reorder_level: product.reorder_level,
+        price: product.selling_price,
+        stock: product.current_stock,
+        min_stock: product.reorder_level,
         barcode: product.barcode?.trim() || null,
         imei: product.imei?.trim() || null,
         serial_number: product.serial_number?.trim() || null,
@@ -248,17 +306,24 @@ const MobileMoney = () => {
       };
 
       if (editingProduct) {
-        await localApi.products.update(editingProduct.id, cleanedProduct);
+        const { error } = await supabase
+          .from("products")
+          .update(cleanedProduct)
+          .eq("id", editingProduct.id);
+        if (error) throw error;
       } else {
-        await localApi.products.create({
-          ...cleanedProduct,
-          department_id: selectedDeptId,
-          tracking_type: "unit",
-        });
+        const { error } = await supabase
+          .from("products")
+          .insert({
+            ...cleanedProduct,
+            department_id: selectedDeptId,
+            tracking_type: "quantity",
+          });
+        if (error) throw error;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mobile-money-products"] });
+      queryClient.invalidateQueries({ queryKey: ["mobile-money-products-supabase"] });
       toast.success(editingProduct ? "Product updated" : "Product added");
       setProductDialogOpen(false);
       setProductForm({ name: "", unit: "", cost_price: 0, selling_price: 0, current_stock: 0, reorder_level: 10, barcode: "", imei: "", serial_number: "", allow_custom_price: true, min_price: 0, max_price: 0 });
@@ -282,13 +347,14 @@ const MobileMoney = () => {
     },
   });
 
-  // Delete product mutation
+  // Delete product mutation using Supabase
   const deleteProductMutation = useMutation({
     mutationFn: async (id: string) => {
-      await localApi.products.delete(id);
+      const { error } = await supabase.from("products").delete().eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mobile-money-products"] });
+      queryClient.invalidateQueries({ queryKey: ["mobile-money-products-supabase"] });
       toast.success("Product deleted");
     },
     onError: () => {
@@ -296,7 +362,7 @@ const MobileMoney = () => {
     },
   });
 
-  // Process POS sale
+  // Process POS sale using Supabase
   const processSale = async () => {
     if (posCart.length === 0) {
       toast.error("Cart is empty");
@@ -322,44 +388,54 @@ const MobileMoney = () => {
       const total = posCart.reduce((sum, item) => {
         const price = item.customPrice || (item.itemType === 'service' 
           ? item.item.base_price 
-          : item.item.selling_price || 0);
+          : item.item.selling_price || item.item.price || 0);
         return sum + (price * item.quantity);
       }, 0);
 
-      // Generate receipt number
-      const receiptNumber = `RCP${Date.now()}`;
+      // Generate receipt number using Supabase function
+      const { data: receiptNumber, error: rcpError } = await supabase.rpc('generate_receipt_number');
+      const finalReceiptNumber = rcpError ? `RCP${Date.now()}` : receiptNumber;
 
-      // Prepare sale items
+      // Create sale record
+      const { data: sale, error: saleError } = await supabase
+        .from("sales")
+        .insert({
+          department_id: selectedDeptId,
+          subtotal: total,
+          total: total,
+          amount_paid: total,
+          payment_method: paymentMethod as "cash" | "card" | "mobile_money" | "credit",
+          receipt_number: finalReceiptNumber,
+          sale_number: finalReceiptNumber,
+          customer_id: null,
+          cashier_name: cashierName,
+          remarks: posCustomerPhone || null,
+        })
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+
+      // Insert sale items
       const saleItems = posCart.map(cartItem => {
         const unitPrice = cartItem.customPrice || (cartItem.itemType === 'service' 
           ? cartItem.item.base_price 
-          : cartItem.item.selling_price);
+          : cartItem.item.selling_price || cartItem.item.price);
         
         return {
+          sale_id: sale.id,
+          name: cartItem.item.name,
           item_name: cartItem.item.name,
           service_id: cartItem.itemType === 'service' ? cartItem.item.id : null,
           product_id: cartItem.itemType === 'product' ? cartItem.item.id : null,
           quantity: cartItem.quantity,
           unit_price: unitPrice,
-          subtotal: unitPrice * cartItem.quantity,
+          total: unitPrice * cartItem.quantity,
         };
       });
 
-      // Create sale record with items
-      const sale = await localApi.sales.create({
-        sale: {
-          department_id: selectedDeptId,
-          subtotal: total,
-          total: total,
-          amount_paid: total,
-          payment_method: paymentMethod,
-          receipt_number: receiptNumber,
-          customer_id: null,
-          cashier_name: cashierName,
-          remarks: posCustomerPhone || null,
-        },
-        items: saleItems,
-      });
+      const { error: itemsError } = await supabase.from("sale_items").insert(saleItems);
+      if (itemsError) console.error("Failed to insert sale items:", itemsError);
 
       // Prepare stock reduction for products
       const cartForStock: any[] = posCart
@@ -382,7 +458,7 @@ const MobileMoney = () => {
 
       // Prepare receipt data matching receiptPrinter interface
       const receiptData = {
-        receiptNumber: receiptNumber,
+        receiptNumber: finalReceiptNumber,
         items: posCart.map(item => {
           const price = item.customPrice || (item.itemType === 'service' 
             ? item.item.base_price 
