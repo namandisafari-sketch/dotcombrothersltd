@@ -33,7 +33,7 @@ interface ProductFormData {
     individual: number;
   };
   bottle_size_ml: number;
-  current_stock_ml: number;
+  total_ml: number;
   cost_per_ml: number;
   wholesale_price_per_ml: number;
   retail_price_per_ml: number;
@@ -274,8 +274,8 @@ export const ProductFormDialog = ({
                   <Label>Current Stock (ml) *</Label>
                   <Input
                     type="number"
-                    value={formData.current_stock_ml}
-                    onChange={e => setFormData({ ...formData, current_stock_ml: parseFloat(e.target.value) || 0 })}
+                    value={formData.total_ml}
+                    onChange={e => setFormData({ ...formData, total_ml: parseFloat(e.target.value) || 0 })}
                     placeholder="e.g., 1000"
                   />
                 </div>
