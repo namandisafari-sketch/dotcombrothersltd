@@ -112,7 +112,7 @@ export function PerfumeRefillDialog({
 
   const pricingConfig = (departmentSettings?.settings_json as any)?.perfume_pricing || DEFAULT_PRICING_CONFIG;
 
-  // Fetch shop products (perfume products from products table, excluding Oil Perfume capital)
+  // Fetch shop products (all regular products from perfume department, excluding Oil Perfume capital stock)
   const { data: shopProducts = [] } = useQuery({
     queryKey: ["perfume-shop-products", selectedDepartmentId],
     queryFn: async () => {
@@ -120,13 +120,17 @@ export function PerfumeRefillDialog({
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("tracking_type", "ml")
         .eq("department_id", selectedDepartmentId)
+        .eq("is_archived", false)
         .neq("name", "Oil Perfume")
         .order("name");
       
       if (error) throw error;
-      return data || [];
+      // Filter out the master stock (ml tracking type used for oil perfume refills)
+      // and products with no stock
+      return (data || []).filter(p => 
+        p.tracking_type !== 'ml' && (p.stock > 0 || p.current_stock > 0)
+      );
     },
     enabled: !!selectedDepartmentId,
   });
