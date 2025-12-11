@@ -244,23 +244,12 @@ const Sales = () => {
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
       
-      // Check if current department is mobile money or perfume
-      const { data: currentDept } = await supabase
-        .from("departments")
-        .select("*")
-        .eq("id", selectedDepartmentId)
-        .maybeSingle();
-      
-      // Don't show services if department is mobile money or perfume
-      if (currentDept?.is_mobile_money || currentDept?.is_perfume_department) {
-        return [];
-      }
-      
-      // Show services from the current department only
+      // Show services from the current department
       const { data: allServices } = await supabase
         .from("services")
         .select("*")
-        .eq("department_id", selectedDepartmentId);
+        .eq("department_id", selectedDepartmentId)
+        .eq("is_active", true);
       
       let filtered = allServices || [];
       if (searchQuery) {
@@ -268,7 +257,7 @@ const Sales = () => {
         filtered = filtered.filter((s: any) => s.name?.toLowerCase().includes(lowerSearch));
       }
       
-      return filtered.slice(0, 10);
+      return filtered.slice(0, 50);
     },
     enabled: !!selectedDepartmentId,
   });
