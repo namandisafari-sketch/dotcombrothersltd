@@ -157,42 +157,18 @@ export const reduceStock = async (
               }
             }
             
-            // Fallback: Try to find scent by name (case-insensitive) - check both department-specific and global scents
-            if (scent.ml > 0) {
-              console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId || 'none'}`);
+            // Fallback: Try to find scent by name (case-insensitive) - ONLY in current department
+            if (scent.ml > 0 && departmentId && departmentId !== 'null' && departmentId !== 'undefined') {
+              console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId}`);
               
-              // First try to find in department, then global
-              let scentByName = null;
-              let nameError = null;
-              
-              // Try department-specific first (only if departmentId is a valid UUID)
-              if (departmentId && departmentId !== 'null' && departmentId !== 'undefined') {
-                const { data: deptScent, error: deptError } = await supabase
-                  .from("perfume_scents")
-                  .select("id, name, stock_ml, department_id")
-                  .ilike("name", scent.scent)
-                  .eq("department_id", departmentId)
-                  .limit(1)
-                  .maybeSingle();
-                
-                if (deptScent) {
-                  scentByName = deptScent;
-                }
-              }
-              
-              // If not found in department, try global scent (null department)
-              if (!scentByName) {
-                const { data: globalScent, error: globalError } = await supabase
-                  .from("perfume_scents")
-                  .select("id, name, stock_ml, department_id")
-                  .ilike("name", scent.scent)
-                  .is("department_id", null)
-                  .limit(1)
-                  .maybeSingle();
-                  
-                scentByName = globalScent;
-                nameError = globalError;
-              }
+              // ONLY search in the department - each department is independent
+              const { data: scentByName, error: nameError } = await supabase
+                .from("perfume_scents")
+                .select("id, name, stock_ml, department_id")
+                .ilike("name", scent.scent)
+                .eq("department_id", departmentId)
+                .limit(1)
+                .maybeSingle();
               
               if (nameError) {
                 console.error(`❌ Error searching scent by name:`, nameError);
@@ -201,7 +177,7 @@ export const reduceStock = async (
               if (scentByName) {
                 const currentMl = scentByName.stock_ml ?? 0;
                 const newMl = Math.max(0, currentMl - scent.ml);
-                console.log(`✅ Found scent by name "${scentByName.name}" (dept: ${scentByName.department_id || 'global'}): Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
+                console.log(`✅ Found scent by name "${scentByName.name}": Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
                 
                 const { error: updateError } = await supabase
                   .from("perfume_scents")
@@ -214,8 +190,10 @@ export const reduceStock = async (
                   console.log(`✅ Scent ${scentByName.name} stock updated to ${newMl}ml`);
                 }
               } else {
-                console.warn(`⚠️ Scent "${scent.scent}" not found in database - stock not deducted`);
+                console.warn(`⚠️ Scent "${scent.scent}" not found in department - stock not deducted`);
               }
+            } else if (!departmentId || departmentId === 'null' || departmentId === 'undefined') {
+              console.error(`❌ Cannot deduct stock: No valid department ID provided`);
             }
           }
         } else {

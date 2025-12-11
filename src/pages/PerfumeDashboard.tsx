@@ -65,64 +65,43 @@ export default function PerfumeDashboard() {
     refetchInterval: 5000,
   });
 
-  // Total stock = sum of all scent stock_ml
+  // Total stock = sum of all scent stock_ml (ONLY department-specific)
   const { data: totalStock } = useQuery({
     queryKey: ["perfume-stock", departmentId],
     queryFn: async () => {
       if (!departmentId) return 0;
       
-      // Fetch department-specific scents
-      const { data: deptScents, error: deptError } = await supabase
+      // Fetch ONLY department-specific scents - each department is independent
+      const { data, error } = await supabase
         .from("perfume_scents")
         .select("stock_ml")
         .eq("department_id", departmentId)
         .eq("is_active", true);
       
-      if (deptError) throw deptError;
-      
-      // Fetch global scents (null department)
-      const { data: globalScents, error: globalError } = await supabase
-        .from("perfume_scents")
-        .select("stock_ml")
-        .is("department_id", null)
-        .eq("is_active", true);
-      
-      if (globalError) throw globalError;
-      
-      const allScents = [...(deptScents || []), ...(globalScents || [])];
-      return allScents.reduce((sum, scent) => sum + (scent.stock_ml || 0), 0);
+      if (error) throw error;
+      return (data || []).reduce((sum, scent) => sum + (scent.stock_ml || 0), 0);
     },
     enabled: !!departmentId && hasAccess,
     refetchInterval: 5000,
   });
 
-  // Low stock scents (individual scents running low)
+  // Low stock scents (individual scents running low) - ONLY department-specific
   const { data: lowStockProducts } = useQuery({
     queryKey: ["perfume-low-stock", departmentId],
     queryFn: async () => {
       if (!departmentId) return [];
       
-      // Fetch department-specific scents
-      const { data: deptScents, error: deptError } = await supabase
+      // Fetch ONLY department-specific scents - each department is independent
+      const { data, error } = await supabase
         .from("perfume_scents")
         .select("id, name, stock_ml")
         .eq("department_id", departmentId)
         .eq("is_active", true);
       
-      if (deptError) throw deptError;
+      if (error) throw error;
       
-      // Fetch global scents (null department)
-      const { data: globalScents, error: globalError } = await supabase
-        .from("perfume_scents")
-        .select("id, name, stock_ml")
-        .is("department_id", null)
-        .eq("is_active", true);
-      
-      if (globalError) throw globalError;
-      
-      const allScents = [...(deptScents || []), ...(globalScents || [])];
       // Return scents with stock below 100ml as low stock
-      return allScents
+      return (data || [])
         .filter(s => (s.stock_ml || 0) < 100)
         .sort((a, b) => (a.stock_ml || 0) - (b.stock_ml || 0))
         .slice(0, 5);

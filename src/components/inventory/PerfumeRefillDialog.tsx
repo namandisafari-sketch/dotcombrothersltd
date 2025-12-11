@@ -75,30 +75,22 @@ export function PerfumeRefillDialog({
   const [selectedBottleSize, setSelectedBottleSize] = useState<string>("");
   const [selectedShopProducts, setSelectedShopProducts] = useState<Record<string, number>>({});
 
-  // Fetch scents with stock information (include global scents with no department)
+  // Fetch scents with stock information (ONLY department-specific - no global scents)
   const { data: scentsWithStock = [] } = useQuery({
     queryKey: ["scents-with-stock", selectedDepartmentId],
     queryFn: async () => {
-      // Fetch department-specific scents
-      const { data: deptScents, error: deptError } = await supabase
+      if (!selectedDepartmentId) return [];
+      
+      // Fetch ONLY department-specific scents - each department is independent
+      const { data, error } = await supabase
         .from("perfume_scents")
         .select("id, name, description, stock_ml, department_id")
         .eq("is_active", true)
-        .eq("department_id", selectedDepartmentId);
+        .eq("department_id", selectedDepartmentId)
+        .order("name");
       
-      if (deptError) throw deptError;
-      
-      // Fetch global scents (null department)
-      const { data: globalScents, error: globalError } = await supabase
-        .from("perfume_scents")
-        .select("id, name, description, stock_ml, department_id")
-        .eq("is_active", true)
-        .is("department_id", null);
-      
-      if (globalError) throw globalError;
-      
-      const allScents = [...(deptScents || []), ...(globalScents || [])];
-      return allScents.sort((a, b) => a.name.localeCompare(b.name));
+      if (error) throw error;
+      return data || [];
     },
     refetchInterval: 5000,
   });
