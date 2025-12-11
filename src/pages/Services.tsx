@@ -63,10 +63,17 @@ const Services = () => {
 
   const saveServiceMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      // Validate department is selected
+      if (!selectedDepartmentId || selectedDepartmentId.length === 0) {
+        throw new Error("Please select a department first");
+      }
+
       const dataWithDepartment = {
         ...data,
         department_id: selectedDepartmentId,
-        category_id: data.category_id || null,
+        // Convert empty string to null for UUID field
+        category_id: data.category_id && data.category_id.length > 0 ? data.category_id : null,
+        price: data.base_price, // Ensure price field is set
       };
 
       if (editingService) {
@@ -99,12 +106,12 @@ const Services = () => {
         material_cost: 0,
         is_negotiable: true,
         description: "",
-        department_id: selectedDepartmentId,
+        department_id: selectedDepartmentId || "",
       });
       queryClient.invalidateQueries({ queryKey: ["services"] });
     },
-    onError: () => {
-      toast.error("Failed to save service");
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to save service");
     },
   });
 
@@ -142,7 +149,24 @@ const Services = () => {
             
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button
+                  onClick={() => {
+                    if (!selectedDepartmentId) {
+                      toast.error("Please select a department first");
+                      return;
+                    }
+                    setEditingService(null);
+                    setFormData({
+                      name: "",
+                      category_id: "",
+                      base_price: 0,
+                      material_cost: 0,
+                      is_negotiable: true,
+                      description: "",
+                      department_id: selectedDepartmentId,
+                    });
+                  }}
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Service
                 </Button>
