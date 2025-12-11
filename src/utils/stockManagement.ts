@@ -84,34 +84,59 @@ export const reduceStock = async (
       return { success: true };
     }
 
+    console.log("Starting stock reduction for", cartItems.length, "items");
+
     for (const item of cartItems) {
-      if (!item.productId && !item.isPerfumeRefill) {
+      console.log("Processing cart item:", {
+        id: item.id,
+        name: item.name,
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        trackingType: item.trackingType,
+        totalMl: item.totalMl,
+        isPerfumeRefill: item.isPerfumeRefill
+      });
+
+      // Skip services (no stock to deduct)
+      if (!item.productId && !item.variantId && !item.isPerfumeRefill) {
+        console.log("Skipping item (service or no productId):", item.name);
         continue;
       }
 
       if (item.variantId) {
+        console.log(`Deducting variant stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceVariantStock(item.variantId, item.quantity);
       } else if (item.isPerfumeRefill && item.totalMl) {
         // For perfume refills, reduce from Oil Perfume master stock
+        console.log(`Deducting perfume refill stock: ${item.totalMl}ml`);
         const { data: masterPerfume } = await supabase
           .from("products")
-          .select("id, total_ml")
+          .select("id, total_ml, name")
           .eq("name", "Oil Perfume")
           .eq("tracking_type", "ml")
           .eq("department_id", departmentId)
           .maybeSingle();
         
         if (masterPerfume) {
+          const currentMl = masterPerfume.total_ml ?? 0;
+          const newMl = Math.max(0, currentMl - item.totalMl);
+          console.log(`Oil Perfume: Current=${currentMl}ml, Deducting=${item.totalMl}ml, New=${newMl}ml`);
+          
           await supabase
             .from("products")
-            .update({ total_ml: (masterPerfume.total_ml || 0) - item.totalMl } as any)
+            .update({ total_ml: newMl })
             .eq("id", masterPerfume.id);
+        } else {
+          console.warn("Master perfume product not found for department:", departmentId);
         }
       } else if (item.productId) {
+        console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceProductStock(item.productId, item.quantity, item.trackingType, item.totalMl);
       }
     }
 
+    console.log("Stock reduction completed successfully");
     return { success: true };
   } catch (error) {
     console.error("Stock reduction error:", error);
@@ -126,23 +151,36 @@ export const reduceStock = async (
  * Reduce stock for a specific product variant
  */
 const reduceVariantStock = async (variantId: string, quantity: number): Promise<void> => {
+  console.log(`Reducing variant stock: variantId=${variantId}, quantity=${quantity}`);
+  
   const { data: variant, error: fetchError } = await supabase
     .from("product_variants")
-    .select("stock")
+    .select("stock, name")
     .eq("id", variantId)
     .single();
 
-  if (fetchError) throw fetchError;
+  if (fetchError) {
+    console.error("Error fetching variant:", fetchError);
+    throw fetchError;
+  }
   if (!variant) throw new Error("Variant not found");
 
-  const newStock = Math.max(0, (variant.stock || 0) - quantity);
+  const currentStock = variant.stock ?? 0;
+  const newStock = Math.max(0, currentStock - quantity);
+  
+  console.log(`Variant ${variant.name}: Current stock=${currentStock}, Deducting=${quantity}, New stock=${newStock}`);
 
   const { error: updateError } = await supabase
     .from("product_variants")
     .update({ stock: newStock })
     .eq("id", variantId);
 
-  if (updateError) throw updateError;
+  if (updateError) {
+    console.error("Error updating variant stock:", updateError);
+    throw updateError;
+  }
+  
+  console.log(`Variant stock updated successfully: ${variant.name} now has ${newStock} units`);
 };
 
 /**
@@ -154,28 +192,53 @@ const reduceProductStock = async (
   trackingType?: string,
   totalMl?: number
 ): Promise<void> => {
+  console.log(`Reducing product stock: productId=${productId}, quantity=${quantity}, trackingType=${trackingType}, totalMl=${totalMl}`);
+  
   const { data: product, error: fetchError } = await supabase
     .from("products")
-    .select("stock, total_ml, tracking_type")
+    .select("stock, total_ml, tracking_type, name")
     .eq("id", productId)
     .single();
 
-  if (fetchError) throw fetchError;
+  if (fetchError) {
+    console.error("Error fetching product:", fetchError);
+    throw fetchError;
+  }
   if (!product) throw new Error("Product not found");
 
-  if (product.tracking_type === "ml" && totalMl) {
-    const newMl = Math.max(0, (product.total_ml || 0) - totalMl);
-    await supabase
+  const isMlTracking = product.tracking_type === "ml" || trackingType === "ml" || trackingType === "milliliter";
+  
+  if (isMlTracking && totalMl) {
+    const currentMl = product.total_ml ?? 0;
+    const newMl = Math.max(0, currentMl - totalMl);
+    console.log(`Product ${product.name} (ml): Current=${currentMl}ml, Deducting=${totalMl}ml, New=${newMl}ml`);
+    
+    const { error: updateError } = await supabase
       .from("products")
-      .update({ total_ml: newMl } as any)
+      .update({ total_ml: newMl })
       .eq("id", productId);
+      
+    if (updateError) {
+      console.error("Error updating product ml:", updateError);
+      throw updateError;
+    }
   } else {
-    const newStock = Math.max(0, (product.stock || 0) - quantity);
-    await supabase
+    const currentStock = product.stock ?? 0;
+    const newStock = Math.max(0, currentStock - quantity);
+    console.log(`Product ${product.name}: Current stock=${currentStock}, Deducting=${quantity}, New stock=${newStock}`);
+    
+    const { error: updateError } = await supabase
       .from("products")
-      .update({ stock: newStock } as any)
+      .update({ stock: newStock })
       .eq("id", productId);
+      
+    if (updateError) {
+      console.error("Error updating product stock:", updateError);
+      throw updateError;
+    }
   }
+  
+  console.log(`Product stock updated successfully for: ${product.name}`);
 };
 
 /**
