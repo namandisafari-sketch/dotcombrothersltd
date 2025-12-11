@@ -726,8 +726,11 @@ const Sales = () => {
       return mockSaleData;
     },
     onSuccess: async (sale) => {
-      // Invalidate all queries to ensure dashboard updates
-      queryClient.invalidateQueries();
+      // Invalidate queries to ensure products and dashboard update with new stock
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await queryClient.invalidateQueries({ queryKey: ["product-variant-counts"] });
+      await queryClient.invalidateQueries({ queryKey: ["sales"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       
       toast.success("Sale completed successfully!");
       
