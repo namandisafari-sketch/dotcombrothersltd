@@ -10,15 +10,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { printReceipt } from "@/utils/receiptPrinter";
+import { printReceipt, generateReceiptHTML } from "@/utils/receiptPrinter";
 import { voidSale } from "@/utils/voidSale";
 import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
+import { PrintPreviewDialog } from "@/components/PrintPreviewDialog";
+import { MobilePrintDialog } from "@/components/MobilePrintDialog";
+import { useMobile } from "@/hooks/use-mobile";
 
 const PerfumeSalesHistory = () => {
   const queryClient = useQueryClient();
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
+  const isMobile = useMobile();
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSale, setSelectedSale] = useState<any>(null);
@@ -28,6 +32,10 @@ const PerfumeSalesHistory = () => {
   const [showVoidDialog, setShowVoidDialog] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [saleToVoid, setSaleToVoid] = useState<any>(null);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printPreviewHtml, setPrintPreviewHtml] = useState("");
+  const [showMobilePrint, setShowMobilePrint] = useState(false);
+  const [mobilePrintData, setMobilePrintData] = useState<any>(null);
 
   // Determine which department to filter by
   const activeDepartmentId = isAdmin ? selectedDepartmentId : userDepartmentId;
@@ -118,7 +126,7 @@ const PerfumeSalesHistory = () => {
     setShowDetailsDialog(true);
   };
 
-  const handleReprintReceipt = async (sale: any) => {
+  const prepareReceiptData = async (sale: any) => {
     // Fetch settings for receipt
     let settings = null;
     if (sale.department_id) {
@@ -154,13 +162,14 @@ const PerfumeSalesHistory = () => {
       }
     }
 
-    const receiptData = {
+    return {
       receiptNumber: sale.receipt_number,
       items: sale.sale_items.map((item: any) => ({
         name: item.item_name,
         quantity: item.quantity,
         price: item.unit_price,
         subtotal: item.total,
+        scentMixture: item.scent_mixture,
       })),
       subtotal: sale.subtotal,
       tax: 0,
@@ -184,12 +193,42 @@ const PerfumeSalesHistory = () => {
       },
       seasonalRemark: settings?.seasonal_remark,
     };
+  };
 
+  const handleReprintReceipt = async (sale: any) => {
     try {
-      await printReceipt(receiptData, false);
-      toast.success("Receipt reprinted successfully");
+      const receiptData = await prepareReceiptData(sale);
+      
+      if (isMobile) {
+        setMobilePrintData(receiptData);
+        setShowMobilePrint(true);
+      } else {
+        const html = generateReceiptHTML(receiptData);
+        setPrintPreviewHtml(html);
+        setShowPrintPreview(true);
+      }
     } catch (error) {
-      toast.error("Failed to reprint receipt");
+      toast.error("Failed to prepare receipt");
+    }
+  };
+
+  const handlePrintFromPreview = async () => {
+    try {
+      const printWindow = window.open('', '_blank', 'width=300,height=600');
+      if (printWindow) {
+        printWindow.document.write(printPreviewHtml);
+        printWindow.document.close();
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+          }, 250);
+        };
+      }
+      setShowPrintPreview(false);
+      toast.success("Receipt printed successfully");
+    } catch (error) {
+      toast.error("Failed to print receipt");
     }
   };
 
@@ -516,6 +555,28 @@ const PerfumeSalesHistory = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Print Preview Dialog */}
+      <PrintPreviewDialog
+        open={showPrintPreview}
+        onOpenChange={setShowPrintPreview}
+        documentHtml={printPreviewHtml}
+        documentTitle="Receipt"
+        documentType="Receipt"
+        onPrint={handlePrintFromPreview}
+      />
+
+      {/* Mobile Print Dialog */}
+      {mobilePrintData && (
+        <MobilePrintDialog
+          isOpen={showMobilePrint}
+          onClose={() => {
+            setShowMobilePrint(false);
+            setMobilePrintData(null);
+          }}
+          receiptData={mobilePrintData}
+        />
+      )}
     </div>
   );
 };
