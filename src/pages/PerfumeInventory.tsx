@@ -45,8 +45,7 @@ export default function PerfumeInventory() {
   const { selectedDepartmentId: contextDepartmentId, selectedDepartment: contextDepartment, isPerfumeDepartment } = useDepartment();
   
   const [selectedPerfumeDeptId, setSelectedPerfumeDeptId] = useState<string | null>(null);
-  const [restockDialogOpen, setRestockDialogOpen] = useState(false);
-  const [restockAmount, setRestockAmount] = useState(0);
+  const [activeTab, setActiveTab] = useState("scent-stock");
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PerfumeProduct | null>(null);
@@ -272,24 +271,7 @@ export default function PerfumeInventory() {
     enabled: !!selectedDepartmentId,
   });
 
-  // Oil perfume restock mutation
-  const restockMutation = useMutation({
-    mutationFn: async ({ amount }: { amount: number }) => {
-      if (!masterPerfume) throw new Error("Master perfume product not found");
-      const newStock = (masterPerfume.total_ml || 0) + amount;
-      const { error } = await supabase
-        .from("products")
-        .update({ total_ml: newStock })
-        .eq("id", masterPerfume.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Oil perfume stock updated");
-      refetchMasterPerfume();
-      setRestockDialogOpen(false);
-      setRestockAmount(0);
-    },
-  });
+
 
   // Oil perfume pricing mutation
   const updatePricingMutation = useMutation({
@@ -495,7 +477,7 @@ export default function PerfumeInventory() {
           )}
         </div>
 
-        <Tabs defaultValue="scent-stock" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="scent-stock" className="flex items-center gap-1">
               <Droplet className="w-4 h-4" />
@@ -630,15 +612,21 @@ export default function PerfumeInventory() {
                       </div>
                     </div>
 
+                    <div className="p-3 bg-muted/50 rounded-lg border border-dashed">
+                      <p className="text-sm text-muted-foreground text-center">
+                        Stock is managed through individual scents. Go to the <strong>Scents</strong> tab to add or update stock.
+                      </p>
+                    </div>
+
                     <div className="pt-4 flex gap-3 flex-wrap">
                       <Button 
-                        onClick={() => setRestockDialogOpen(true)}
+                        onClick={() => setActiveTab("scents")}
                         className="flex-1"
                         size="lg"
                         variant={isOilPerfumeLowStock ? "default" : "outline"}
                       >
                         <Package className="w-5 h-5 mr-2" />
-                        Add Stock
+                        Manage Scent Stock
                       </Button>
                       <Button 
                         onClick={() => setPricingDialogOpen(true)}
@@ -782,50 +770,6 @@ export default function PerfumeInventory() {
           </TabsContent>
         </Tabs>
 
-        {/* Restock Dialog */}
-        <Dialog open={restockDialogOpen} onOpenChange={setRestockDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Stock to Oil Perfume</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Current Stock</Label>
-                <p className="text-2xl font-bold text-primary">
-                  {masterPerfume?.total_ml?.toLocaleString() || 0} ml
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="amount">Amount to Add (ml)</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  value={restockAmount}
-                  onChange={(e) => setRestockAmount(Number(e.target.value))}
-                  placeholder="Enter ml to add"
-                  min="0"
-                />
-              </div>
-              {restockAmount > 0 && (
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">New Total</p>
-                  <p className="text-xl font-bold">
-                    {((masterPerfume?.total_ml || 0) + restockAmount).toLocaleString()} ml
-                  </p>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setRestockDialogOpen(false)}>Cancel</Button>
-              <Button 
-                onClick={() => restockMutation.mutate({ amount: restockAmount })}
-                disabled={restockAmount <= 0}
-              >
-                Add Stock
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* Pricing Dialog */}
         <Dialog open={pricingDialogOpen} onOpenChange={setPricingDialogOpen}>
