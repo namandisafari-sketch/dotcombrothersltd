@@ -7,7 +7,7 @@ import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sparkles, AlertCircle, Package, Plus, Edit, Trash2 } from "lucide-react";
+import { Sparkles, AlertCircle, Package, Plus, Edit, Trash2, Droplet } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { ScentStockManager } from "@/components/inventory/ScentStockManager";
 
 interface PerfumeProduct {
   id: string;
@@ -467,18 +468,36 @@ export default function PerfumeInventory() {
           )}
         </div>
 
-        <Tabs defaultValue="oil-perfume" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue="scent-stock" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="scent-stock" className="flex items-center gap-1">
+              <Droplet className="w-4 h-4" />
+              Scent Stock
+            </TabsTrigger>
             <TabsTrigger value="oil-perfume" className="relative">
-              Oil Perfume
+              Oil Settings
               {isOilPerfumeLowStock && (
                 <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-xs">
-                  Low Stock
+                  Low
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="shop-products">Shop Products</TabsTrigger>
           </TabsList>
+
+          {/* Scent Stock Tab - NEW */}
+          <TabsContent value="scent-stock" className="space-y-6">
+            {selectedDepartmentId ? (
+              <ScentStockManager departmentId={selectedDepartmentId} />
+            ) : (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Droplet className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">Please select a perfume department</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
 
           {/* Oil Perfume Tab */}
           <TabsContent value="oil-perfume" className="space-y-6">

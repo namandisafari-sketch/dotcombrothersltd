@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X, Sparkles, Plus, Package } from "lucide-react";
+import { X, Sparkles, Plus, Package, Scale, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { PERFUME_SCENTS } from "@/constants/perfumeScents";
 import { useDepartment } from "@/contexts/DepartmentContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface PerfumeRefillDialogProps {
   open: boolean;
@@ -24,8 +25,11 @@ interface PerfumeRefillDialogProps {
   onAddToCart: (item: any) => void;
 }
 
-interface ScentWithMl {
+interface ScentWithWeight {
   scent: string;
+  scentId: string | null;
+  weightBefore: number;
+  weightAfter: number;
   ml: number;
 }
 
@@ -56,6 +60,8 @@ const DEFAULT_PRICING_CONFIG = {
   }
 };
 
+const DEFAULT_DENSITY = 0.9; // g/ml for perfume oils
+
 export function PerfumeRefillDialog({
   open,
   onOpenChange,
@@ -64,30 +70,31 @@ export function PerfumeRefillDialog({
   onAddToCart,
 }: PerfumeRefillDialogProps) {
   const { selectedDepartmentId } = useDepartment();
-  const [scentsWithMl, setScentsWithMl] = useState<ScentWithMl[]>([]);
+  const [scentsWithWeight, setScentsWithWeight] = useState<ScentWithWeight[]>([]);
   const [currentScent, setCurrentScent] = useState("");
-  const [currentMl, setCurrentMl] = useState<string>("");
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [customerType, setCustomerType] = useState<"retail" | "wholesale">("retail");
   const [selectedBottleSize, setSelectedBottleSize] = useState<string>("");
   const [selectedShopProducts, setSelectedShopProducts] = useState<Record<string, number>>({});
+  
+  // Weight measurement states
+  const [emptyBottleWeight, setEmptyBottleWeight] = useState<string>("");
+  const [currentWeight, setCurrentWeight] = useState<string>("");
 
-  // Fetch Oil Perfume master stock (uses total_ml for ml tracking)
-  const { data: masterPerfumeStock } = useQuery({
-    queryKey: ["oil-perfume-stock", selectedDepartmentId],
+  // Fetch scents with stock information
+  const { data: scentsWithStock = [] } = useQuery({
+    queryKey: ["scents-with-stock", selectedDepartmentId],
     queryFn: async () => {
-      if (!selectedDepartmentId) return null;
-      
+      if (!selectedDepartmentId) return [];
       const { data, error } = await supabase
-        .from("products")
-        .select("id, total_ml, min_stock")
-        .eq("name", "Oil Perfume")
-        .eq("tracking_type", "ml")
+        .from("perfume_scents")
+        .select("id, name, description, stock_ml, density")
         .eq("department_id", selectedDepartmentId)
-        .maybeSingle();
+        .eq("is_active", true)
+        .order("name");
       
-      if (error && error.code !== 'PGRST116') throw error;
-      return data;
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!selectedDepartmentId,
   });
@@ -112,7 +119,7 @@ export function PerfumeRefillDialog({
 
   const pricingConfig = (departmentSettings?.settings_json as any)?.perfume_pricing || DEFAULT_PRICING_CONFIG;
 
-  // Fetch shop products (all regular products from perfume department, excluding Oil Perfume capital stock)
+  // Fetch shop products
   const { data: shopProducts = [] } = useQuery({
     queryKey: ["perfume-shop-products", selectedDepartmentId],
     queryFn: async () => {
@@ -126,8 +133,6 @@ export function PerfumeRefillDialog({
         .order("name");
       
       if (error) throw error;
-      // Filter out the master stock (ml tracking type used for oil perfume refills)
-      // and products with no stock
       return (data || []).filter(p => 
         p.tracking_type !== 'ml' && (p.stock > 0 || p.current_stock > 0)
       );
@@ -135,7 +140,7 @@ export function PerfumeRefillDialog({
     enabled: !!selectedDepartmentId,
   });
 
-  // Fetch custom scents
+  // Fetch custom scents (for backwards compatibility)
   const { data: customScents } = useQuery({
     queryKey: ["custom-scents"],
     queryFn: async () => {
@@ -149,11 +154,32 @@ export function PerfumeRefillDialog({
     },
   });
 
-  // Combine default and custom scents
-  const allScents = [
+  // Combine default and custom scents, prefer ones with stock data
+  const allScents = [...new Set([
+    ...scentsWithStock.map(s => s.name),
     ...PERFUME_SCENTS,
     ...(customScents?.map(s => s.name) || [])
-  ].sort();
+  ])].sort();
+
+  // Get scent stock info
+  const getScentInfo = (scentName: string) => {
+    return scentsWithStock.find(s => s.name === scentName);
+  };
+
+  // Calculate ML from weight difference
+  const calculateMlFromWeight = (weightBefore: number, weightAfter: number, density: number = DEFAULT_DENSITY) => {
+    if (weightAfter <= weightBefore) return 0;
+    const weightDiff = weightAfter - weightBefore;
+    return Math.round((weightDiff / density) * 10) / 10;
+  };
+
+  // Get current bottle weight (empty + all scents added so far)
+  const getCurrentBottleWeight = () => {
+    if (scentsWithWeight.length === 0) {
+      return parseFloat(emptyBottleWeight) || 0;
+    }
+    return scentsWithWeight[scentsWithWeight.length - 1].weightAfter;
+  };
 
   const addScent = () => {
     if (!currentScent) {
@@ -161,48 +187,77 @@ export function PerfumeRefillDialog({
       return;
     }
     
-    if (customerType === "wholesale") {
-      if (!currentMl || isNaN(parseFloat(currentMl)) || parseFloat(currentMl) <= 0) {
-        toast.error("Please enter a valid ml amount");
-        return;
-      }
+    if (!emptyBottleWeight || parseFloat(emptyBottleWeight) <= 0) {
+      toast.error("Please enter the empty bottle weight first");
+      return;
+    }
+
+    if (!currentWeight || parseFloat(currentWeight) <= 0) {
+      toast.error("Please enter the current weight after adding the scent");
+      return;
     }
     
-    if (scentsWithMl.length >= 10) {
+    if (scentsWithWeight.length >= 10) {
       toast.error("Maximum 10 scents allowed");
       return;
     }
-    if (scentsWithMl.some(s => s.scent === currentScent)) {
+    
+    if (scentsWithWeight.some(s => s.scent === currentScent)) {
       toast.error("Scent already added");
       return;
     }
+
+    const scentInfo = getScentInfo(currentScent);
+    const weightBefore = getCurrentBottleWeight();
+    const weightAfter = parseFloat(currentWeight);
+    const density = scentInfo?.density || DEFAULT_DENSITY;
+    const mlUsed = calculateMlFromWeight(weightBefore, weightAfter, density);
+
+    if (mlUsed <= 0) {
+      toast.error("Current weight must be greater than previous weight");
+      return;
+    }
+
+    // Check stock availability
+    if (scentInfo && scentInfo.stock_ml !== null && mlUsed > scentInfo.stock_ml) {
+      toast.error(`Insufficient stock for ${currentScent}! Available: ${scentInfo.stock_ml}ml, Required: ${mlUsed}ml`);
+      return;
+    }
+
+    setScentsWithWeight([...scentsWithWeight, {
+      scent: currentScent,
+      scentId: scentInfo?.id || null,
+      weightBefore,
+      weightAfter,
+      ml: mlUsed,
+    }]);
     
-    const mlValue = customerType === "wholesale" ? parseFloat(currentMl) : 0;
-    setScentsWithMl([...scentsWithMl, { scent: currentScent, ml: mlValue }]);
     setCurrentScent("");
-    setCurrentMl("");
+    setCurrentWeight("");
   };
 
   const removeScent = (scent: string) => {
-    setScentsWithMl(scentsWithMl.filter(s => s.scent !== scent));
-  };
-
-  const updateScentMl = (scent: string, ml: string) => {
-    const mlValue = parseFloat(ml);
-    if (isNaN(mlValue) || mlValue < 0) return;
+    const index = scentsWithWeight.findIndex(s => s.scent === scent);
+    if (index === -1) return;
     
-    setScentsWithMl(scentsWithMl.map(s => 
-      s.scent === scent ? { ...s, ml: mlValue } : s
-    ));
+    // Remove this scent and recalculate subsequent weights
+    const newScents = [...scentsWithWeight];
+    newScents.splice(index, 1);
+    
+    // Recalculate weights for subsequent scents
+    for (let i = index; i < newScents.length; i++) {
+      const prevWeight = i === 0 ? parseFloat(emptyBottleWeight) : newScents[i - 1].weightAfter;
+      const scentInfo = getScentInfo(newScents[i].scent);
+      const density = scentInfo?.density || DEFAULT_DENSITY;
+      newScents[i].weightBefore = prevWeight;
+      newScents[i].ml = calculateMlFromWeight(prevWeight, newScents[i].weightAfter, density);
+    }
+    
+    setScentsWithWeight(newScents);
   };
 
   const getTotalMl = () => {
-    if (customerType === "retail") {
-      if (!selectedBottleSize) return 0;
-      return Number(selectedBottleSize);
-    } else {
-      return scentsWithMl.reduce((sum, scent) => sum + scent.ml, 0);
-    }
+    return scentsWithWeight.reduce((sum, s) => sum + s.ml, 0);
   };
 
   const getBottleCostBySize = (totalMl: number) => {
@@ -222,12 +277,12 @@ export function PerfumeRefillDialog({
       const bottlePricing = pricingConfig?.retail_bottle_pricing?.sizes;
       if (!bottlePricing || !Array.isArray(bottlePricing)) return 0;
       
-      const pricing = bottlePricing.find((p: any) => p.ml === totalMl);
-      return pricing?.price || 0;
+      // Find closest bottle size pricing
+      const pricing = bottlePricing.find((p: any) => p.ml >= totalMl) || bottlePricing[bottlePricing.length - 1];
+      return pricing?.price || (totalMl * (pricingConfig?.retail_price_per_ml || 800));
     } else {
       const pricePerMl = pricingConfig?.wholesale_price_per_ml || 400;
-      const basePrice = totalMl * pricePerMl;
-      return Math.round(basePrice);
+      return Math.round(totalMl * pricePerMl);
     }
   };
   
@@ -238,42 +293,36 @@ export function PerfumeRefillDialog({
   };
 
   const handleAddToCart = async () => {
-    if (scentsWithMl.length === 0) {
+    if (scentsWithWeight.length === 0) {
       toast.error("Please add at least one scent");
       return;
     }
 
     const totalMl = getTotalMl();
     if (totalMl <= 0) {
-      toast.error(customerType === "retail" ? "Please select a bottle size" : "Total ml must be greater than 0");
-      return;
-    }
-
-    // Check available stock
-    const availableStock = masterPerfumeStock?.total_ml || 0;
-    if (totalMl > availableStock) {
-      toast.error(`Insufficient stock! Available: ${availableStock}ml, Required: ${totalMl}ml`);
+      toast.error("Total ml must be greater than 0");
       return;
     }
 
     const price = calculatePrice();
-    const scentMixture = scentsWithMl.map(s => 
-      `${s.scent}${customerType === "wholesale" ? ` (${s.ml}ml)` : ''}`
-    ).join(" + ");
+    const scentMixture = scentsWithWeight.map(s => `${s.scent} (${s.ml}ml)`).join(" + ");
     const pricePerMl = getPricePerMl();
     const bottleCost = getBottleCostBySize(totalMl);
-    
     const basePrice = totalMl * pricePerMl;
     
     onAddToCart({
       id: `perfume-${Date.now()}`,
-      name: `${scentMixture} (${totalMl}ml)`,
+      name: `${scentMixture}`,
       price,
       quantity: 1,
       type: "perfume",
       isService: true,
       trackingType: "ml",
-      selectedScents: scentsWithMl,
+      selectedScents: scentsWithWeight.map(s => ({
+        scent: s.scent,
+        scentId: s.scentId,
+        ml: s.ml,
+      })),
       bottleSize: totalMl,
       customerType,
       pricePerMl,
@@ -283,14 +332,16 @@ export function PerfumeRefillDialog({
       isPerfumeRefill: true,
       subtotal: price,
       bottleCost,
+      emptyBottleWeight: parseFloat(emptyBottleWeight),
     });
 
     // Reset form
-    setScentsWithMl([]);
+    setScentsWithWeight([]);
     setSelectedBottleSize("");
     setCustomerType("retail");
     setCurrentScent("");
-    setCurrentMl("");
+    setCurrentWeight("");
+    setEmptyBottleWeight("");
     onOpenChange(false);
     
     toast.success("Added to cart!");
@@ -336,7 +387,10 @@ export function PerfumeRefillDialog({
     toast.success("Products added to cart!");
   };
 
-  const bottleSizes = pricingConfig?.retail_bottle_pricing?.sizes || DEFAULT_PRICING_CONFIG.retail_bottle_pricing.sizes;
+  // Get total stock available
+  const getTotalAvailableStock = () => {
+    return scentsWithStock.reduce((sum, s) => sum + (s.stock_ml || 0), 0);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -347,25 +401,24 @@ export function PerfumeRefillDialog({
             Perfume Point of Sale
           </DialogTitle>
           <DialogDescription>
-            Create custom perfume bottles with oil or alcohol-based fragrances
+            Create custom perfume bottles - measure by weight for accurate stock tracking
           </DialogDescription>
-          {masterPerfumeStock && (
-            <div className="mt-2 p-2 bg-muted/50 rounded-md flex items-center justify-between">
-              <span className="text-sm font-medium">Available Oil Perfume Stock:</span>
-              <Badge variant={
-                (masterPerfumeStock.total_ml || 0) < (masterPerfumeStock.min_stock || 1000)
-                  ? "destructive"
-                  : "secondary"
-              }>
-                {(masterPerfumeStock.total_ml || 0).toLocaleString()} ml
-              </Badge>
-            </div>
-          )}
-          {!masterPerfumeStock && (
-            <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded-md">
-              <p className="text-sm text-destructive font-medium">⚠️ Oil Perfume stock not configured</p>
-              <p className="text-xs text-muted-foreground">Contact admin to set up perfume inventory</p>
-            </div>
+          
+          {/* Stock Summary */}
+          <div className="mt-2 p-2 bg-muted/50 rounded-md flex items-center justify-between">
+            <span className="text-sm font-medium">Total Available Stock:</span>
+            <Badge variant={getTotalAvailableStock() < 500 ? "destructive" : "secondary"}>
+              {getTotalAvailableStock().toLocaleString()} ml across {scentsWithStock.length} scents
+            </Badge>
+          </div>
+          
+          {scentsWithStock.length === 0 && (
+            <Alert variant="destructive" className="mt-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No scent stock configured. Please set up scent inventory first.
+              </AlertDescription>
+            </Alert>
           )}
         </DialogHeader>
 
@@ -396,108 +449,156 @@ export function PerfumeRefillDialog({
               </Select>
             </div>
 
-            {/* Bottle Size (Retail only) */}
-            {customerType === "retail" && (
-              <div className="space-y-2">
-                <Label>Bottle Size</Label>
-                <Select value={selectedBottleSize} onValueChange={setSelectedBottleSize}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select bottle size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bottleSizes.map((size: any) => (
-                      <SelectItem key={size.ml} value={size.ml.toString()}>
-                        {size.ml}ml - UGX {size.price.toLocaleString()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Empty Bottle Weight */}
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Scale className="w-4 h-4 text-primary" />
+                  <Label className="font-medium">Step 1: Empty Bottle Weight</Label>
+                </div>
+                <Input
+                  type="number"
+                  placeholder="Enter empty bottle weight in grams"
+                  value={emptyBottleWeight}
+                  onChange={(e) => setEmptyBottleWeight(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Weigh the empty bottle before adding any perfume
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Scent Selection with Weight */}
+            {emptyBottleWeight && parseFloat(emptyBottleWeight) > 0 && (
+              <Card className="bg-muted/30">
+                <CardContent className="pt-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <Label className="font-medium">Step 2: Add Scents</Label>
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          {currentScent || "Select scent..."}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0">
+                        <Command>
+                          <CommandInput placeholder="Search scents..." />
+                          <CommandList>
+                            <CommandEmpty>No scent found.</CommandEmpty>
+                            <CommandGroup>
+                              {allScents.map((scent) => {
+                                const scentInfo = getScentInfo(scent);
+                                const hasStock = scentInfo && (scentInfo.stock_ml || 0) > 0;
+                                
+                                return (
+                                  <CommandItem
+                                    key={scent}
+                                    value={scent}
+                                    onSelect={() => {
+                                      setCurrentScent(scent);
+                                      setPopoverOpen(false);
+                                    }}
+                                    className="flex justify-between"
+                                  >
+                                    <span>{scent}</span>
+                                    {scentInfo && (
+                                      <Badge variant={hasStock ? "secondary" : "destructive"} className="text-xs">
+                                        {scentInfo.stock_ml || 0}ml
+                                      </Badge>
+                                    )}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    
+                    {currentScent && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">
+                          Weight after adding {currentScent} (grams)
+                        </Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            placeholder={`Current weight (must be > ${getCurrentBottleWeight()}g)`}
+                            value={currentWeight}
+                            onChange={(e) => setCurrentWeight(e.target.value)}
+                          />
+                          <Button onClick={addScent}>
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        {currentWeight && parseFloat(currentWeight) > getCurrentBottleWeight() && (
+                          <p className="text-xs text-primary">
+                            ≈ {calculateMlFromWeight(getCurrentBottleWeight(), parseFloat(currentWeight))}ml of {currentScent}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
-            {/* Scent Selection */}
-            <div className="space-y-2">
-              <Label>Add Scents</Label>
-              <div className="flex gap-2">
-                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="flex-1 justify-start">
-                      {currentScent || "Select scent..."}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[300px] p-0">
-                    <Command>
-                      <CommandInput placeholder="Search scents..." />
-                      <CommandList>
-                        <CommandEmpty>No scent found.</CommandEmpty>
-                        <CommandGroup>
-                          {allScents.map((scent) => (
-                            <CommandItem
-                              key={scent}
-                              value={scent}
-                              onSelect={() => {
-                                setCurrentScent(scent);
-                                setPopoverOpen(false);
-                              }}
-                            >
-                              {scent}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                {customerType === "wholesale" && (
-                  <Input
-                    type="number"
-                    placeholder="ml"
-                    className="w-20"
-                    value={currentMl}
-                    onChange={(e) => setCurrentMl(e.target.value)}
-                  />
-                )}
-                <Button onClick={addScent} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-
             {/* Selected Scents */}
-            {scentsWithMl.length > 0 && (
+            {scentsWithWeight.length > 0 && (
               <div className="space-y-2">
-                <Label>Selected Scents</Label>
-                <div className="flex flex-wrap gap-2">
-                  {scentsWithMl.map((s) => (
-                    <Badge key={s.scent} variant="secondary" className="px-3 py-1 flex items-center gap-2">
-                      {s.scent}
-                      {customerType === "wholesale" && (
-                        <Input
-                          type="number"
-                          className="w-16 h-6 text-xs"
-                          value={s.ml}
-                          onChange={(e) => updateScentMl(s.scent, e.target.value)}
-                        />
-                      )}
-                      <button onClick={() => removeScent(s.scent)} className="ml-1">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                <Label>Added Scents</Label>
+                <div className="space-y-2">
+                  {scentsWithWeight.map((s, index) => {
+                    const scentInfo = getScentInfo(s.scent);
+                    
+                    return (
+                      <div key={s.scent} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{s.scent}</span>
+                            <Badge variant="secondary">{s.ml}ml</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {s.weightBefore}g → {s.weightAfter}g
+                            {scentInfo && ` | Stock remaining: ${Math.max(0, (scentInfo.stock_ml || 0) - s.ml)}ml`}
+                          </p>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => removeScent(s.scent)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {/* Price Summary */}
-            {scentsWithMl.length > 0 && (
-              <Card>
+            {scentsWithWeight.length > 0 && (
+              <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex justify-between">
                     <span>Total Volume:</span>
                     <span className="font-semibold">{getTotalMl()} ml</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Price:</span>
+                    <span>Customer Type:</span>
+                    <Badge variant="outline" className="capitalize">{customerType}</Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Bottle Cost:</span>
+                    <span>UGX {getBottleCostBySize(getTotalMl()).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span>Total Price:</span>
                     <span className="font-bold text-lg text-primary">
                       UGX {calculatePrice().toLocaleString()}
                     </span>
@@ -509,7 +610,7 @@ export function PerfumeRefillDialog({
             <Button 
               onClick={handleAddToCart} 
               className="w-full"
-              disabled={scentsWithMl.length === 0 || (customerType === "retail" && !selectedBottleSize)}
+              disabled={scentsWithWeight.length === 0}
             >
               Add to Cart
             </Button>
