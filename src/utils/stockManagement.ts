@@ -117,11 +117,14 @@ export const reduceStock = async (
         await reduceVariantStock(item.variantId, item.quantity);
       } else if ((item.isPerfumeRefill || item.type === "perfume") && item.totalMl) {
         // Deduct from individual scent stock_ml values
-        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from scents`);
+        console.log(`🧴 Deducting perfume refill stock: ${item.totalMl}ml total from ${item.selectedScents?.length || 0} scents`);
+        console.log("Selected scents:", JSON.stringify(item.selectedScents));
         
         if (item.selectedScents && item.selectedScents.length > 0) {
           // Deduct from each selected scent
           for (const scent of item.selectedScents) {
+            console.log(`Processing scent: ${scent.scent}, scentId: ${scent.scentId}, ml: ${scent.ml}`);
+            
             if (scent.scentId && scent.ml > 0) {
               const { data: scentData, error: fetchError } = await supabase
                 .from("perfume_scents")
@@ -130,14 +133,15 @@ export const reduceStock = async (
                 .single();
               
               if (fetchError) {
-                console.error(`Error fetching scent ${scent.scent}:`, fetchError);
-                continue;
+                console.error(`❌ Error fetching scent by ID ${scent.scentId}:`, fetchError);
+                // Fallback to name search
+                console.log(`Trying fallback search by name: ${scent.scent}`);
               }
               
               if (scentData) {
                 const currentMl = scentData.stock_ml ?? 0;
                 const newMl = Math.max(0, currentMl - scent.ml);
-                console.log(`Scent ${scentData.name}: Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
+                console.log(`✅ Scent ${scentData.name}: Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
                 
                 const { error: updateError } = await supabase
                   .from("perfume_scents")
@@ -145,35 +149,52 @@ export const reduceStock = async (
                   .eq("id", scent.scentId);
                 
                 if (updateError) {
-                  console.error(`Error updating scent ${scentData.name}:`, updateError);
+                  console.error(`❌ Error updating scent ${scentData.name}:`, updateError);
                 } else {
-                  console.log(`Scent ${scentData.name} stock updated to ${newMl}ml`);
+                  console.log(`✅ Scent ${scentData.name} stock updated to ${newMl}ml`);
                 }
+                continue; // Move to next scent
               }
-            } else {
-              // Try to find scent by name if no scentId - check both department-specific and global scents
-              const { data: scentByName } = await supabase
+            }
+            
+            // Fallback: Try to find scent by name (case-insensitive) - check both department-specific and global scents
+            if (scent.ml > 0) {
+              console.log(`🔍 Searching for scent by name: "${scent.scent}" in department ${departmentId}`);
+              
+              const { data: scentByName, error: nameError } = await supabase
                 .from("perfume_scents")
-                .select("id, name, stock_ml")
-                .eq("name", scent.scent)
+                .select("id, name, stock_ml, department_id")
+                .ilike("name", scent.scent)
                 .or(`department_id.eq.${departmentId},department_id.is.null`)
                 .limit(1)
                 .maybeSingle();
               
-              if (scentByName && scent.ml > 0) {
+              if (nameError) {
+                console.error(`❌ Error searching scent by name:`, nameError);
+              }
+              
+              if (scentByName) {
                 const currentMl = scentByName.stock_ml ?? 0;
                 const newMl = Math.max(0, currentMl - scent.ml);
-                console.log(`Scent ${scentByName.name} (by name): Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
+                console.log(`✅ Found scent by name "${scentByName.name}" (dept: ${scentByName.department_id || 'global'}): Current=${currentMl}ml, Deducting=${scent.ml}ml, New=${newMl}ml`);
                 
-                await supabase
+                const { error: updateError } = await supabase
                   .from("perfume_scents")
                   .update({ stock_ml: newMl })
                   .eq("id", scentByName.id);
+                  
+                if (updateError) {
+                  console.error(`❌ Error updating scent:`, updateError);
+                } else {
+                  console.log(`✅ Scent ${scentByName.name} stock updated to ${newMl}ml`);
+                }
+              } else {
+                console.warn(`⚠️ Scent "${scent.scent}" not found in database - stock not deducted`);
               }
             }
           }
         } else {
-          console.warn("No selectedScents provided for perfume refill, cannot deduct individual scent stock");
+          console.warn("⚠️ No selectedScents provided for perfume refill, cannot deduct individual scent stock");
         }
       } else if (item.productId) {
         console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
