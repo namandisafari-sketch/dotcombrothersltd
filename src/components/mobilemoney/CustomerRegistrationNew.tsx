@@ -55,13 +55,18 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
       if (error) throw error;
       return data || [];
     },
-    enabled: !!departmentId,
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   // Create/Update registration mutation
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      if (!departmentId || departmentId.length === 0) {
+        throw new Error("Department ID is required");
+      }
+      
       const { data: user } = await supabase.auth.getUser();
+      const userId = user.user?.id || null;
       
       if (editMode && data.id) {
         const { id, ...updateData } = data;
@@ -78,7 +83,7 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
           .insert({
             ...insertData,
             department_id: departmentId,
-            registered_by: user.user?.id,
+            registered_by: userId,
           });
         
         if (error) throw error;

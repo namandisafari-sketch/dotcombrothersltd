@@ -54,11 +54,15 @@ export const DataPackages = ({ departmentId }: DataPackagesProps) => {
       if (error) throw error;
       return data as DataPackage[];
     },
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   // Create/Update mutation
   const savePackageMutation = useMutation({
     mutationFn: async (packageData: typeof packageForm) => {
+      if (!departmentId || departmentId.length === 0) {
+        throw new Error("Department ID is required");
+      }
       if (editingPackage) {
         const { error } = await supabase
           .from("data_packages")

@@ -60,7 +60,7 @@ export function MobileMoneyHistory({ departmentId }: MobileMoneyHistoryProps) {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!departmentId,
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   // Fetch department settings for receipt printing
@@ -74,7 +74,7 @@ export function MobileMoneyHistory({ departmentId }: MobileMoneyHistoryProps) {
         .maybeSingle();
       return data;
     },
-    enabled: !!departmentId,
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   const handleViewDetails = (sale: any) => {
@@ -97,10 +97,10 @@ export function MobileMoneyHistory({ departmentId }: MobileMoneyHistoryProps) {
         date: format(new Date(sale.created_at), "PPP p"),
         cashierName: sale.cashier_name || "N/A",
         items: sale.sale_items.map((item: any) => ({
-          name: item.item_name,
+          name: item.item_name || item.name,
           quantity: item.quantity,
           price: item.unit_price,
-          subtotal: item.subtotal,
+          subtotal: item.total, // Use 'total' instead of 'subtotal' as per schema
         })),
         subtotal: sale.subtotal,
         tax: 0,
@@ -286,10 +286,10 @@ export function MobileMoneyHistory({ departmentId }: MobileMoneyHistoryProps) {
                     <TableBody>
                       {selectedSale.sale_items.map((item: any) => (
                         <TableRow key={item.id}>
-                          <TableCell>{item.item_name}</TableCell>
+                          <TableCell>{item.item_name || item.name}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
                           <TableCell>UGX {item.unit_price.toLocaleString()}</TableCell>
-                          <TableCell>UGX {item.subtotal.toLocaleString()}</TableCell>
+                          <TableCell>UGX {item.total.toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

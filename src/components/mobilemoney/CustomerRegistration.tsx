@@ -53,11 +53,14 @@ export function CustomerRegistration({ departmentId }: CustomerRegistrationProps
       if (error) throw error;
       return data || [];
     },
-    enabled: !!departmentId,
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      if (!departmentId || departmentId.length === 0) {
+        throw new Error("Department ID is required");
+      }
       if (editMode && data.id) {
         const { id, ...updateData } = data;
         const { error } = await supabase

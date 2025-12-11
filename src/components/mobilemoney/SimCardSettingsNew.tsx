@@ -54,11 +54,16 @@ export const SimCardSettings = ({ departmentId }: SimCardSettingsProps) => {
       if (error && error.code !== "PGRST116") throw error;
       return data;
     },
+    enabled: !!departmentId && departmentId.length > 0,
   });
 
   // Save settings mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!departmentId || departmentId.length === 0) {
+        throw new Error("Department ID is required");
+      }
+      
       const settingsData = {
         help_codes: helpCodes,
         internet_settings: internetSettings,

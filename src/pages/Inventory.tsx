@@ -163,11 +163,17 @@ const Inventory = () => {
         min_stock: data.reorder_level,
         price: data.selling_price,
       };
-      if (!dataToSave.category_id) dataToSave.category_id = null;
-      if (!dataToSave.department_id) dataToSave.department_id = null;
-      if (!dataToSave.supplier_id) dataToSave.supplier_id = null;
-      if (!dataToSave.barcode) dataToSave.barcode = null;
-      if (!dataToSave.brand) dataToSave.brand = null;
+      // Ensure UUID fields are null, not empty strings
+      dataToSave.category_id = dataToSave.category_id && dataToSave.category_id.length > 0 ? dataToSave.category_id : null;
+      dataToSave.department_id = dataToSave.department_id && dataToSave.department_id.length > 0 ? dataToSave.department_id : null;
+      dataToSave.supplier_id = dataToSave.supplier_id && dataToSave.supplier_id.length > 0 ? dataToSave.supplier_id : null;
+      dataToSave.barcode = dataToSave.barcode && dataToSave.barcode.length > 0 ? dataToSave.barcode : null;
+      dataToSave.brand = dataToSave.brand && dataToSave.brand.length > 0 ? dataToSave.brand : null;
+      
+      // Require department_id for new products
+      if (!editingProduct && !dataToSave.department_id) {
+        throw new Error("Please select a department before adding a product");
+      }
 
       if (editingProduct) {
         const { error } = await supabase
