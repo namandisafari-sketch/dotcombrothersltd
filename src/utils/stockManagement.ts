@@ -114,9 +114,27 @@ export const reduceStock = async (
       if (item.variantId) {
         console.log(`Deducting variant stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceVariantStock(item.variantId, item.quantity);
-      } else if (item.isPerfumeRefill) {
-        // Scent stock is managed manually - no automatic deduction
-        console.log(`Perfume refill sale recorded (stock managed manually): ${item.totalMl || 0}ml`);
+      } else if (item.isPerfumeRefill && item.totalMl) {
+        // Deduct from master Oil Perfume total_ml only (scent division is manual)
+        console.log(`Deducting perfume refill stock: ${item.totalMl}ml from total`);
+        const { data: masterPerfume } = await supabase
+          .from("products")
+          .select("id, total_ml, name")
+          .eq("name", "Oil Perfume")
+          .eq("tracking_type", "ml")
+          .eq("department_id", departmentId)
+          .maybeSingle();
+        
+        if (masterPerfume) {
+          const currentMl = masterPerfume.total_ml ?? 0;
+          const newMl = Math.max(0, currentMl - item.totalMl);
+          console.log(`Oil Perfume: Current=${currentMl}ml, Deducting=${item.totalMl}ml, New=${newMl}ml`);
+          
+          await supabase
+            .from("products")
+            .update({ total_ml: newMl })
+            .eq("id", masterPerfume.id);
+        }
       } else if (item.productId) {
         console.log(`Deducting product stock for: ${item.name}, quantity: ${item.quantity}`);
         await reduceProductStock(item.productId, item.quantity, item.trackingType, item.totalMl);
