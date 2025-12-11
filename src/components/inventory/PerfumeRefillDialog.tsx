@@ -13,7 +13,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { PERFUME_SCENTS } from "@/constants/perfumeScents";
+// PERFUME_SCENTS import removed - we only use scents from database now
 import { useDepartment } from "@/contexts/DepartmentContext";
 
 interface PerfumeRefillDialogProps {
@@ -182,26 +182,14 @@ export function PerfumeRefillDialog({
     enabled: !!selectedDepartmentId,
   });
 
-  // Fetch custom scents (for backwards compatibility)
-  const { data: customScents } = useQuery({
-    queryKey: ["custom-scents"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("perfume_scents")
-        .select("*")
-        .order("name");
-      
-      if (error) throw error;
-      return data || [];
-    },
-  });
+  // No longer need customScents query - we only use scentsWithStock from database
 
-  // Combine default and custom scents
-  const allScents = [...new Set([
-    ...scentsWithStock.map(s => s.name),
-    ...PERFUME_SCENTS,
-    ...(customScents?.map(s => s.name) || [])
-  ])].sort();
+  // ONLY show scents from database - not from static list
+  // This ensures we can always deduct stock when a sale is made
+  const allScents = scentsWithStock
+    .filter(s => (s.stock_ml || 0) > 0)  // Only show scents with stock
+    .map(s => s.name)
+    .sort();
 
   // Get scent stock info
   const getScentInfo = (scentName: string) => {
@@ -543,6 +531,15 @@ export function PerfumeRefillDialog({
                   <Sparkles className="w-4 h-4 text-primary" />
                   <Label className="font-medium">Select Scents</Label>
                 </div>
+                
+                {allScents.length === 0 && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>No scents with stock available!</strong> Please add scents with stock in Perfume Inventory before making sales.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 
                 <div className="flex gap-2">
                   <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
