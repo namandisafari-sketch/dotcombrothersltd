@@ -3,10 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, TrendingUp, Users, ShoppingCart, Package } from "lucide-react";
 import { useDepartment } from "@/contexts/DepartmentContext";
-import { format, startOfDay, endOfDay } from "date-fns";
+import { format } from "date-fns";
+import { useSalesRealtime } from "@/hooks/useRealtimeUpdates";
 
 const MobileMoneyDashboard = () => {
   const { selectedDepartmentId } = useDepartment();
+  
+  // Enable realtime updates
+  useSalesRealtime(selectedDepartmentId);
 
   const { data: todaySales = [] } = useQuery({
     queryKey: ["mobile-money-sales-today", selectedDepartmentId],

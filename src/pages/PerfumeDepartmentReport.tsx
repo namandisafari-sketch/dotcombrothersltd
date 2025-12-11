@@ -20,11 +20,18 @@ import {
 import { useUserRole } from "@/hooks/useUserRole";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState } from "react";
+import { useSalesRealtime, useInventoryRealtime } from "@/hooks/useRealtimeUpdates";
 
 const PerfumeDepartmentReport = () => {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
+  
+  const deptId = selectedDepartmentId || userDepartmentId;
+  
+  // Enable realtime updates
+  useSalesRealtime(deptId);
+  useInventoryRealtime(deptId);
 
   // Check if user's department is a perfume department
   const { data: userDepartment } = useQuery({

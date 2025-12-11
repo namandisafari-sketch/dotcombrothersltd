@@ -10,11 +10,17 @@ import { DollarSign, TrendingUp, Package, Users, AlertCircle } from "lucide-reac
 import { useUserRole } from "@/hooks/useUserRole";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState, useEffect } from "react";
+import { useFinancialRealtime } from "@/hooks/useRealtimeUpdates";
 
 const PerfumeRevenueReport = () => {
   const today = format(new Date(), "yyyy-MM-dd");
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
+  
+  const departmentId = isAdmin && selectedDepartmentId ? selectedDepartmentId : userDepartmentId;
+  
+  // Enable realtime updates
+  useFinancialRealtime(departmentId);
 
   // Check if user's department is a perfume department
   const { data: userDepartment } = useQuery({
@@ -45,9 +51,6 @@ const PerfumeRevenueReport = () => {
       </div>
     );
   }
-
-  const departmentId = isAdmin && selectedDepartmentId ? selectedDepartmentId : userDepartmentId;
-
   const { data: revenueData, isLoading } = useQuery({
     queryKey: ["perfume-daily-revenue", today, departmentId],
     queryFn: async () => {
