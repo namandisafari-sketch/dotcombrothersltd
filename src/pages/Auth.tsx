@@ -15,50 +15,27 @@ import jagonixBg from "@/assets/jagonix-bg.png";
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   
-  useEffect(() => {
-    // Check if user is already logged in
-    if (session) {
-      navigate("/dashboard");
-    }
+  // Immediate redirect if already logged in - no blinking
+  if (session && !authLoading) {
+    navigate("/dashboard", { replace: true });
+    return null;
+  }
 
-    // Keyboard shortcuts handler
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'k' || e.ctrlKey && e.key === '?') {
-        e.preventDefault();
-        toast.info('Keyboard Shortcuts', {
-          description: 'Ctrl+R or F5: Refresh page\nCtrl+K: Show shortcuts',
-          duration: 4000
-        });
-      }
-      if (e.ctrlKey && e.key === 'r') {
-        e.preventDefault();
-        toast.success('Refreshing page...', { duration: 1000 });
-        setTimeout(() => window.location.reload(), 1000);
-      }
-      if (e.key === 'F5') {
-        e.preventDefault();
-        toast.success('Refreshing page...', { duration: 1000 });
-        setTimeout(() => window.location.reload(), 1000);
-      }
-    };
-    window.addEventListener('keydown', handleKeyPress);
-
-    const timer = setTimeout(() => {
-      toast.info('Press Ctrl+K to see keyboard shortcuts', { duration: 3000 });
-    }, 2000);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-      clearTimeout(timer);
-    };
-  }, [navigate, session]);
+  // Show nothing while checking auth to prevent flash
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#062e18]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
