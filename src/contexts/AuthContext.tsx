@@ -85,35 +85,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let initialCheckDone = false;
 
-    const initializeAuth = async () => {
-      try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
-        
-        if (!mounted) return;
-        
-        setSession(initialSession);
-        
-        if (initialSession?.user) {
-          const userDetails = await fetchUserDetails(initialSession.user);
-          if (mounted) {
-            setUser(userDetails);
-          }
-        }
-      } catch (error) {
-        console.error('Error initializing auth:', error);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
+    // Set up auth listener FIRST to catch all events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         if (!mounted) return;
+        
+        console.log('Auth event:', event);
+        
+        // Handle INITIAL_SESSION - this fires on page load/refresh
+        if (event === 'INITIAL_SESSION') {
+          setSession(currentSession);
+          if (currentSession?.user) {
+            const userDetails = await fetchUserDetails(currentSession.user);
+            if (mounted) {
+              setUser(userDetails);
+            }
+          }
+          if (mounted) {
+            initialCheckDone = true;
+            setIsLoading(false);
+          }
+          return;
+        }
         
         setSession(currentSession);
         
@@ -127,17 +122,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
           setIsLoading(false);
         } else if (event === 'TOKEN_REFRESHED' && currentSession?.user) {
-          // Only update session, don't refetch user details on token refresh
-          if (mounted && !user) {
-            const userDetails = await fetchUserDetails(currentSession.user);
+          const userDetails = await fetchUserDetails(currentSession.user);
+          if (mounted) {
             setUser(userDetails);
           }
         }
       }
     );
 
+    // Fallback: if INITIAL_SESSION doesn't fire within 3 seconds, check manually
+    const fallbackTimeout = setTimeout(async () => {
+      if (!mounted || initialCheckDone) return;
+      
+      console.log('Auth fallback check triggered');
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (!mounted || initialCheckDone) return;
+        
+        setSession(currentSession);
+        if (currentSession?.user) {
+          const userDetails = await fetchUserDetails(currentSession.user);
+          if (mounted) {
+            setUser(userDetails);
+          }
+        }
+      } catch (error) {
+        console.error('Error in fallback auth check:', error);
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }, 3000);
+
     return () => {
       mounted = false;
+      clearTimeout(fallbackTimeout);
       subscription.unsubscribe();
     };
   }, []);
