@@ -13,14 +13,14 @@ interface StockReconciliationProps {
 const LOW_STOCK_THRESHOLD = 100; // ml
 
 export function StockReconciliation({ departmentId }: StockReconciliationProps) {
-  // Fetch all active scents with stock
+  // Fetch all active scents with stock (include global scents with null department_id)
   const { data: scents = [] } = useQuery({
     queryKey: ["scents-reconcile", departmentId],
     queryFn: async () => {
       const { data } = await supabase
         .from("perfume_scents")
         .select("id, name, stock_ml")
-        .eq("department_id", departmentId)
+        .or(`department_id.eq.${departmentId},department_id.is.null`)
         .eq("is_active", true)
         .order("name");
       return data || [];
