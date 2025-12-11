@@ -79,24 +79,28 @@ export function PerfumeRefillDialog({
   const { data: scentsWithStock = [] } = useQuery({
     queryKey: ["scents-with-stock", selectedDepartmentId],
     queryFn: async () => {
-      // Fetch all active scents - both department-specific and global (null department)
-      let query = supabase
+      // Fetch department-specific scents
+      const { data: deptScents, error: deptError } = await supabase
         .from("perfume_scents")
         .select("id, name, description, stock_ml, department_id")
         .eq("is_active", true)
-        .order("name");
+        .eq("department_id", selectedDepartmentId);
       
-      if (selectedDepartmentId) {
-        // Include scents for this department OR global scents (no department)
-        query = query.or(`department_id.eq.${selectedDepartmentId},department_id.is.null`);
-      }
-      // If no department selected, show all scents
+      if (deptError) throw deptError;
       
-      const { data, error } = await query;
+      // Fetch global scents (null department)
+      const { data: globalScents, error: globalError } = await supabase
+        .from("perfume_scents")
+        .select("id, name, description, stock_ml, department_id")
+        .eq("is_active", true)
+        .is("department_id", null);
       
-      if (error) throw error;
-      return data || [];
+      if (globalError) throw globalError;
+      
+      const allScents = [...(deptScents || []), ...(globalScents || [])];
+      return allScents.sort((a, b) => a.name.localeCompare(b.name));
     },
+    refetchInterval: 5000,
   });
 
   // Fetch frequently used scents (from recent sales)

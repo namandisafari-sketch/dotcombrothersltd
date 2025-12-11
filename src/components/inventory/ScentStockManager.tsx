@@ -55,17 +55,29 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
   const { data: scents = [], isLoading } = useQuery({
     queryKey: ["scent-stock", departmentId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch department-specific scents
+      const { data: deptScents, error: deptError } = await supabase
         .from("perfume_scents")
         .select("*")
-        .or(`department_id.eq.${departmentId},department_id.is.null`)
-        .eq("is_active", true)
-        .order("name");
+        .eq("department_id", departmentId)
+        .eq("is_active", true);
       
-      if (error) throw error;
-      return (data || []) as Scent[];
+      if (deptError) throw deptError;
+      
+      // Fetch global scents (null department)
+      const { data: globalScents, error: globalError } = await supabase
+        .from("perfume_scents")
+        .select("*")
+        .is("department_id", null)
+        .eq("is_active", true);
+      
+      if (globalError) throw globalError;
+      
+      const allScents = [...(deptScents || []), ...(globalScents || [])];
+      return allScents.sort((a, b) => a.name.localeCompare(b.name)) as Scent[];
     },
     enabled: !!departmentId,
+    refetchInterval: 5000,
   });
 
   // Fetch departments for admin dropdown

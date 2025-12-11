@@ -71,17 +71,29 @@ export default function PerfumeDashboard() {
     queryFn: async () => {
       if (!departmentId) return 0;
       
-      const { data, error } = await supabase
+      // Fetch department-specific scents
+      const { data: deptScents, error: deptError } = await supabase
         .from("perfume_scents")
         .select("stock_ml")
-        .or(`department_id.eq.${departmentId},department_id.is.null`)
+        .eq("department_id", departmentId)
         .eq("is_active", true);
       
-      if (error) throw error;
-      return (data || []).reduce((sum, scent) => sum + (scent.stock_ml || 0), 0);
+      if (deptError) throw deptError;
+      
+      // Fetch global scents (null department)
+      const { data: globalScents, error: globalError } = await supabase
+        .from("perfume_scents")
+        .select("stock_ml")
+        .is("department_id", null)
+        .eq("is_active", true);
+      
+      if (globalError) throw globalError;
+      
+      const allScents = [...(deptScents || []), ...(globalScents || [])];
+      return allScents.reduce((sum, scent) => sum + (scent.stock_ml || 0), 0);
     },
     enabled: !!departmentId && hasAccess,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   // Low stock scents (individual scents running low)
@@ -90,20 +102,33 @@ export default function PerfumeDashboard() {
     queryFn: async () => {
       if (!departmentId) return [];
       
-      const { data, error } = await supabase
+      // Fetch department-specific scents
+      const { data: deptScents, error: deptError } = await supabase
         .from("perfume_scents")
         .select("id, name, stock_ml")
-        .or(`department_id.eq.${departmentId},department_id.is.null`)
-        .eq("is_active", true)
-        .order("stock_ml", { ascending: true })
-        .limit(5);
+        .eq("department_id", departmentId)
+        .eq("is_active", true);
       
-      if (error) throw error;
+      if (deptError) throw deptError;
+      
+      // Fetch global scents (null department)
+      const { data: globalScents, error: globalError } = await supabase
+        .from("perfume_scents")
+        .select("id, name, stock_ml")
+        .is("department_id", null)
+        .eq("is_active", true);
+      
+      if (globalError) throw globalError;
+      
+      const allScents = [...(deptScents || []), ...(globalScents || [])];
       // Return scents with stock below 100ml as low stock
-      return (data || []).filter(s => (s.stock_ml || 0) < 100);
+      return allScents
+        .filter(s => (s.stock_ml || 0) < 100)
+        .sort((a, b) => (a.stock_ml || 0) - (b.stock_ml || 0))
+        .slice(0, 5);
     },
     enabled: !!departmentId && hasAccess,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   // Recent sales (excluding voided)

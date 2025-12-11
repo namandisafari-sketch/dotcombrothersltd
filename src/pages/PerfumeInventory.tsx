@@ -154,17 +154,29 @@ export default function PerfumeInventory() {
   const { data: totalScentStock = 0 } = useQuery({
     queryKey: ["total-scent-stock", selectedDepartmentId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch department-specific scents
+      const { data: deptScents, error: deptError } = await supabase
         .from("perfume_scents")
         .select("stock_ml")
-        .or(selectedDepartmentId 
-          ? `department_id.eq.${selectedDepartmentId},department_id.is.null`
-          : `department_id.is.null`)
+        .eq("department_id", selectedDepartmentId)
         .eq("is_active", true);
       
-      if (error) throw error;
-      return data?.reduce((sum, s) => sum + (s.stock_ml || 0), 0) || 0;
+      if (deptError) throw deptError;
+      
+      // Fetch global scents (null department)
+      const { data: globalScents, error: globalError } = await supabase
+        .from("perfume_scents")
+        .select("stock_ml")
+        .is("department_id", null)
+        .eq("is_active", true);
+      
+      if (globalError) throw globalError;
+      
+      const allScents = [...(deptScents || []), ...(globalScents || [])];
+      return allScents.reduce((sum, s) => sum + (s.stock_ml || 0), 0);
     },
+    enabled: !!selectedDepartmentId,
+    refetchInterval: 5000,
   });
 
   // Fetch bottle pricing config
