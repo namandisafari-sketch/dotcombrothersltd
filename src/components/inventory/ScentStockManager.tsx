@@ -53,7 +53,7 @@ export function ScentStockManager({ departmentId }: ScentStockManagerProps) {
       const { data, error } = await supabase
         .from("perfume_scents")
         .select("*")
-        .eq("department_id", departmentId)
+        .or(`department_id.eq.${departmentId},department_id.is.null`)
         .eq("is_active", true)
         .order("name");
       

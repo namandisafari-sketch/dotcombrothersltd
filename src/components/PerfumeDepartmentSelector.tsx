@@ -13,7 +13,7 @@ interface PerfumeDepartmentSelectorProps {
 export function PerfumeDepartmentSelector({ value, onChange }: PerfumeDepartmentSelectorProps) {
   const { isAdmin, departmentId: userDepartmentId } = useUserRole();
 
-  // Fetch departments that have perfume in settings
+  // Fetch departments that are perfume departments
   const { data: perfumeDepartments = [], isLoading } = useQuery({
     queryKey: ["perfume-departments"],
     queryFn: async () => {
@@ -21,15 +21,11 @@ export function PerfumeDepartmentSelector({ value, onChange }: PerfumeDepartment
         .from("departments")
         .select("*")
         .eq("is_active", true)
+        .or("is_perfume_department.eq.true,name.ilike.%perfume%")
         .order("name");
       
       if (error) throw error;
-      
-      // Filter departments that have perfume settings enabled
-      return (data || []).filter((dept: any) => {
-        const settings = dept.settings as Record<string, any> | null;
-        return settings?.is_perfume_department === true;
-      });
+      return data || [];
     },
   });
 
