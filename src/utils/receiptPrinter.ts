@@ -54,29 +54,34 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
           background: #ffffff;
         }
         .header { 
-          text-align: center; 
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
           padding-bottom: 10px; 
           margin-bottom: 10px;
         }
         .logo {
-          width: 60px;
-          height: 60px;
-          margin: 0 auto 8px;
-          border-radius: 8px;
+          width: 50px;
+          height: 50px;
+          border-radius: 6px;
           border: 1px solid #ddd;
           object-fit: contain;
+          flex-shrink: 0;
+        }
+        .header-info {
+          flex: 1;
         }
         .business-name { 
           font-weight: bold; 
-          font-size: 14px; 
-          letter-spacing: 0.5px;
-          margin-bottom: 5px;
+          font-size: 13px; 
+          letter-spacing: 0.3px;
+          margin-bottom: 3px;
           text-transform: uppercase;
           color: #000;
         }
         .info-line { 
-          margin: 2px 0; 
-          font-size: 10px;
+          margin: 1px 0; 
+          font-size: 9px;
           color: #333;
         }
         .receipt-info { 
@@ -202,11 +207,13 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
     </head>
     <body>
       <div class="header">
-        ${data.businessInfo.logo ? `<img src="${data.businessInfo.logo}" alt="Logo" class="logo" />` : '<div style="font-size: 10px; color: #888; border: 1px solid #ddd; border-radius: 8px; padding: 8px; margin-bottom: 8px;">Logo</div>'}
-        <div class="business-name">${data.businessInfo.name}</div>
-        <div class="info-line">📍 ${data.businessInfo.address}</div>
-        <div class="info-line">☎ ${data.businessInfo.phone}</div>
-        ${data.businessInfo.email ? `<div class="info-line">✉ ${data.businessInfo.email}</div>` : ''}
+        ${data.businessInfo.logo ? `<img src="${data.businessInfo.logo}" alt="Logo" class="logo" />` : ''}
+        <div class="header-info">
+          <div class="business-name">${data.businessInfo.name}</div>
+          <div class="info-line">📍 ${data.businessInfo.address}</div>
+          <div class="info-line">☎ ${data.businessInfo.phone}</div>
+          ${data.businessInfo.email ? `<div class="info-line">✉ ${data.businessInfo.email}</div>` : ''}
+        </div>
       </div>
       
       <div class="receipt-info">

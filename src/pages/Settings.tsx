@@ -328,23 +328,22 @@ const Settings = () => {
                           const file = e.target.files?.[0];
                           if (file) {
                             try {
-                              const formData = new FormData();
-                              formData.append('logo', file);
+                              const fileExt = file.name.split('.').pop();
+                              const fileName = `logo_${Date.now()}.${fileExt}`;
                               
-                              const response = await fetch('http://localhost:3001/api/upload/logo', {
-                                method: 'POST',
-                                headers: {
-                                  'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                                },
-                                body: formData,
-                              });
+                              const { error: uploadError } = await supabase.storage
+                                .from('department-logos')
+                                .upload(fileName, file, { upsert: true });
                               
-                              if (!response.ok) throw new Error('Upload failed');
+                              if (uploadError) throw uploadError;
                               
-                              const data = await response.json();
+                              const { data: urlData } = supabase.storage
+                                .from('department-logos')
+                                .getPublicUrl(fileName);
+                              
                               setFormData(prev => ({
                                 ...prev,
-                                logo_url: `http://localhost:3001${data.url}`,
+                                logo_url: urlData.publicUrl,
                               }));
                               toast.success('Logo uploaded successfully');
                             } catch (error) {
