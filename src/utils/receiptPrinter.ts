@@ -292,11 +292,27 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
           <div style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">POWERED BY</div>
           <div style="font-weight: bold; font-size: 16px; margin-bottom: 5px; color: #000;">KABEJJA SYSTEMS</div>
           <div style="margin-bottom: 15px; font-size: 11px;">In partnership with DOTCOM BROTHERS LTD</div>
+          
+          <div style="display: flex; justify-content: center; gap: 15px; margin: 15px 0;">
+            <div style="text-align: center;">
+              <div style="font-weight: bold; font-size: 9px; margin-bottom: 5px;">Scan to Visit Website</div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://www.kabejjasystems.store" 
+                   alt="Website QR" 
+                   style="width: 80px; height: 80px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
+              <div style="font-size: 8px; margin-top: 3px;">🌐 kabejjasystems.store</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-weight: bold; font-size: 9px; margin-bottom: 5px;">Scan to WhatsApp</div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=https://wa.me/256745368426" 
+                   alt="WhatsApp QR" 
+                   style="width: 80px; height: 80px; border: 1px solid #333; border-radius: 4px; padding: 2px; background: white;" />
+              <div style="font-size: 8px; margin-top: 3px;">📞 +256745368426</div>
+            </div>
+          </div>
+          
           <div style="border-top: 1px dashed #000; padding-top: 10px; margin-top: 10px;">
-            <div style="font-weight: bold; margin-bottom: 5px;">Visit us at:</div>
-            <div style="font-size: 12px; margin-bottom: 10px;">🌐 www.kabejjasystems.store</div>
-            <div style="font-weight: bold; margin-bottom: 5px;">Talk to Earn:</div>
-            <div style="font-size: 12px;">📞 +256745368426</div>
+            <div style="font-weight: bold; margin-bottom: 3px;">Talk to Earn for POS Systems!</div>
+            <div style="font-size: 9px; color: #555;">Custom software solutions for your business</div>
           </div>
         </div>
       </div>
