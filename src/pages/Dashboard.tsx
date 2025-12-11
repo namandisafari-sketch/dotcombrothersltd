@@ -35,7 +35,7 @@ const Dashboard = () => {
       return (data || []).reduce((sum, sale) => sum + Number(sale.total || 0), 0);
     },
     enabled: !!selectedDepartmentId && !isPerfumeDepartment,
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Reduced from 5s to 30s
   });
 
   // Low stock products - using Supabase directly
@@ -54,7 +54,7 @@ const Dashboard = () => {
       return (data || []).filter(p => (p.stock || 0) <= (p.min_stock || 5));
     },
     enabled: !!selectedDepartmentId && !isPerfumeDepartment,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Reduced from 10s to 60s
   });
 
   // Recent sales - using Supabase directly
@@ -75,7 +75,7 @@ const Dashboard = () => {
       return data || [];
     },
     enabled: !!selectedDepartmentId && !isPerfumeDepartment,
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Reduced from 5s to 30s
   });
 
   // Total products - using Supabase directly
@@ -94,7 +94,7 @@ const Dashboard = () => {
       return count || 0;
     },
     enabled: !!selectedDepartmentId && !isPerfumeDepartment,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Reduced from 10s to 60s
   });
 
   // Total customers - using Supabase directly
@@ -112,7 +112,7 @@ const Dashboard = () => {
       return count || 0;
     },
     enabled: !!selectedDepartmentId && !isPerfumeDepartment,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Reduced from 10s to 60s
   });
 
   // Check if current department is a perfume department
