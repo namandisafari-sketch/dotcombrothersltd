@@ -53,7 +53,7 @@ export default function Welcome() {
           </div>
 
           <div className="pt-4 border-t">
-            <Link to="/">
+            <Link to="/home">
               <Button variant="ghost" className="gap-2 text-muted-foreground hover:text-foreground">
                 Continue to App <ArrowRight className="h-4 w-4" />
               </Button>

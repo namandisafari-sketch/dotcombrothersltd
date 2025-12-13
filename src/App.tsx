@@ -149,7 +149,8 @@ const App = () => (
                 
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/" element={<Welcome />} />
+                    <Route path="/home" element={<LandingPage />} />
                     <Route path="/auth" element={<Auth />} />
                     <Route element={<AppLayout><ProtectedRoute /></AppLayout>}>
                       <Route path="/dashboard" element={<Dashboard />} />
@@ -194,7 +195,6 @@ const App = () => (
                       <Route path="/user-accounts-guide" element={<UserAccountsGuide />} />
                     </Route>
                     {/* Public routes for customer self-service */}
-                    <Route path="/welcome" element={<Welcome />} />
                     <Route path="/customer-scent-check-in" element={<CustomerScentCheckIn />} />
                     <Route path="/customer-scent-memory" element={<CustomerScentMemory />} />
                   </Routes>
