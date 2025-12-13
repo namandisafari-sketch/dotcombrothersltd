@@ -358,8 +358,9 @@ export default function LandingPage() {
             </div>
           </div>
           
-          <div className="border-t mt-12 pt-8 text-center text-muted-foreground">
+          <div className="border-t mt-12 pt-8 text-center text-muted-foreground space-y-4">
             <p>&copy; {new Date().getFullYear()} {businessName}. All rights reserved.</p>
+            <h3 className="text-lg font-semibold text-foreground">Made with Love by Earn Frank test by Hamzooz Zolna</h3>
           </div>
         </div>
       </footer>

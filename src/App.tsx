@@ -69,6 +69,7 @@ const CustomerScentMemory = lazy(() => import("./pages/CustomerScentMemory"));
 const ScentCheckInQR = lazy(() => import("./pages/ScentCheckInQR"));
 const DataImport = lazy(() => import("./pages/DataImport"));
 const UserAccountsGuide = lazy(() => import("./pages/UserAccountsGuide"));
+const Welcome = lazy(() => import("./pages/Welcome"));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -193,6 +194,7 @@ const App = () => (
                       <Route path="/user-accounts-guide" element={<UserAccountsGuide />} />
                     </Route>
                     {/* Public routes for customer self-service */}
+                    <Route path="/welcome" element={<Welcome />} />
                     <Route path="/customer-scent-check-in" element={<CustomerScentCheckIn />} />
                     <Route path="/customer-scent-memory" element={<CustomerScentMemory />} />
                   </Routes>
