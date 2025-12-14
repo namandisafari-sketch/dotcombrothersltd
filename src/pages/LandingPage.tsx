@@ -8,7 +8,33 @@ import { Link } from "react-router-dom";
 import heroBanner from "@/assets/hero-banner.jpg";
 import logo from "@/assets/logo.png";
 
-const services = [
+// Icon mapping for dynamic services
+const iconMap: Record<string, any> = {
+  Printer,
+  Wifi,
+  Smartphone,
+  Globe,
+  Mail,
+  Phone,
+  MapPin,
+  Zap,
+  Clock,
+  Shield,
+  Star,
+};
+
+// Default color gradients for services
+const colorGradients = [
+  "from-blue-500 to-cyan-500",
+  "from-green-500 to-emerald-500",
+  "from-orange-500 to-amber-500",
+  "from-purple-500 to-pink-500",
+  "from-red-500 to-rose-500",
+  "from-indigo-500 to-violet-500",
+];
+
+// Fallback services if none in database
+const defaultServices = [
   { 
     id: "1", 
     title: "Printing Services", 
@@ -58,6 +84,31 @@ export default function LandingPage() {
       return data;
     },
   });
+
+  // Fetch dynamic services from database
+  const { data: dbServices } = useQuery({
+    queryKey: ["service-showcase"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("service_showcase")
+        .select("*")
+        .eq("is_visible", true)
+        .order("display_order");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Map database services to display format, or use defaults
+  const services = dbServices && dbServices.length > 0
+    ? dbServices.map((service, index) => ({
+        id: service.id,
+        title: service.title,
+        description: service.description || "",
+        icon: iconMap[service.title.split(" ")[0]] || Globe,
+        color: colorGradients[index % colorGradients.length],
+      }))
+    : defaultServices;
 
   const businessName = settings?.business_name || "DOTCOM BROTHERS LTD";
 
