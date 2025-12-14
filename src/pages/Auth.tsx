@@ -13,6 +13,14 @@ import { RefreshCw } from "lucide-react";
 import logo from "@/assets/logo.png";
 import jagonixBg from "@/assets/jagonix-bg.png";
 
+// Check if we're on self-hosted domain
+const isSelfHosted = () => {
+  const hostname = window.location.hostname;
+  return hostname === 'dotcombrothersltd.com' || 
+         hostname === 'www.dotcombrothersltd.com' ||
+         hostname === '172.234.31.22';
+};
+
 const Auth = () => {
   const navigate = useNavigate();
   const { session, isLoading: authLoading } = useAuth();
@@ -22,14 +30,24 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   
-  // Immediate redirect if already logged in - no blinking
-  if (session && !authLoading) {
+  // For self-hosted, check localStorage token instead of Supabase session
+  useEffect(() => {
+    if (isSelfHosted()) {
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        navigate("/dashboard", { replace: true });
+      }
+    }
+  }, [navigate]);
+  
+  // Immediate redirect if already logged in (for Supabase mode)
+  if (!isSelfHosted() && session && !authLoading) {
     navigate("/dashboard", { replace: true });
     return null;
   }
 
   // Show nothing while checking auth to prevent flash
-  if (authLoading) {
+  if (!isSelfHosted() && authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#062e18]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -37,21 +55,63 @@ const Auth = () => {
     );
   }
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
+  // Self-hosted login using local backend API
+  const handleSelfHostedAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error("Please fill in all fields");
       return;
     }
 
-    // Validate email
+    try {
+      setIsLoading(true);
+      
+      const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
+      const body = isSignUp 
+        ? { email, password, full_name: fullName }
+        : { email, password };
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+      
+      // Store token and user data
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      
+      toast.success(isSignUp ? "Account created!" : "Welcome back!");
+      navigate("/dashboard");
+      
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      toast.error(error.message || "Invalid email or password");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Supabase login (original implementation)
+  const handleSupabaseAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
     const emailValidation = emailSchema.safeParse(email);
     if (!emailValidation.success) {
       toast.error(emailValidation.error.errors[0].message);
       return;
     }
 
-    // Validate password for signup
     if (isSignUp) {
       const passwordValidation = passwordSchema.safeParse(password);
       if (!passwordValidation.success) {
@@ -69,23 +129,18 @@ const Auth = () => {
           return;
         }
         
-        console.log('Attempting registration...');
         const { data, error } = await supabase.auth.signUp({
           email: emailValidation.data,
           password,
-          options: {
-            data: { full_name: fullName }
-          }
+          options: { data: { full_name: fullName } }
         });
         
         if (error) throw error;
-        
         if (data.user) {
-          toast.success("Account created successfully! Signing you in...");
+          toast.success("Account created successfully!");
           navigate("/dashboard");
         }
       } else {
-        console.log('Attempting login...');
         const { data, error } = await supabase.auth.signInWithPassword({
           email: emailValidation.data,
           password
@@ -94,7 +149,6 @@ const Auth = () => {
         if (error) throw error;
         
         if (data.user) {
-          // Check if user is active
           const { data: profile } = await supabase
             .from('profiles')
             .select('is_active')
@@ -103,7 +157,7 @@ const Auth = () => {
           
           if (profile && !profile.is_active) {
             await supabase.auth.signOut();
-            toast.error("Your account has been deactivated. Please contact support.");
+            toast.error("Your account has been deactivated.");
             return;
           }
           
@@ -113,13 +167,10 @@ const Auth = () => {
       }
     } catch (error: any) {
       console.error('Auth error:', error);
-      
       if (error.message?.includes("Invalid login credentials")) {
         toast.error("Invalid email or password");
       } else if (error.message?.includes("User already registered")) {
-        toast.error("Email already registered. Please sign in instead.");
-      } else if (error.message?.includes("Email not confirmed")) {
-        toast.error("Please confirm your email before signing in.");
+        toast.error("Email already registered.");
       } else {
         toast.error(error.message || "An unexpected error occurred");
       }
@@ -127,6 +178,8 @@ const Auth = () => {
       setIsLoading(false);
     }
   };
+
+  const handleEmailAuth = isSelfHosted() ? handleSelfHostedAuth : handleSupabaseAuth;
 
   return (
     <div 
