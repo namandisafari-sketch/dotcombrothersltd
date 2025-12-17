@@ -215,8 +215,8 @@ const PerfumePOS = () => {
       return;
     }
     
-    const pricingTiers = product.pricing_tiers as { retail?: number; wholesale?: number } | null;
-    const retailPrice = pricingTiers?.retail || product.selling_price || product.price;
+    // Use direct retail_price field
+    const retailPrice = product.retail_price || product.price;
     
     addToCart({
       id: `barcode-${product.id}-${Date.now()}`,
@@ -771,9 +771,9 @@ const PerfumePOS = () => {
                   </CardHeader>
                   <CardContent className="space-y-2 max-h-[400px] overflow-y-auto">
                     {perfumeProducts.filter(p => p.tracking_type === 'quantity').map((product) => {
-                      const pricingTiers = product.pricing_tiers as { retail?: number; wholesale?: number } | null;
-                      const retailPrice = pricingTiers?.retail || product.selling_price || product.price;
-                      const wholesalePrice = pricingTiers?.wholesale || ((product.selling_price || product.price) * 0.8);
+                      // Use direct retail_price and wholesale_price fields
+                      const retailPrice = product.retail_price || product.price;
+                      const wholesalePrice = product.wholesale_price || (product.retail_price ? product.retail_price * 0.8 : product.price * 0.8);
                       const currentStock = product.current_stock || product.stock || 0;
                       
                       return (
