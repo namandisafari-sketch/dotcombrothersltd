@@ -1326,32 +1326,50 @@ const PerfumePOS = () => {
                 <div className="space-y-3">
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
                     <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      Wholesale - Measure by ML
+                      Direct ML Measurement (No Bottle)
                     </p>
                     <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Enter the exact MLs the customer is taking
+                      Stock: {scannedProduct.total_ml || scannedProduct.stock || 0} ml available
                     </p>
                   </div>
+                  
+                  {/* Quick ML Presets */}
                   <div>
-                    <Label>Quantity in ML</Label>
+                    <Label className="text-xs text-muted-foreground">Quick Select</Label>
+                    <div className="grid grid-cols-4 gap-1 mt-1">
+                      {[50, 100, 200, 250, 300, 500, 750, 1000].map((ml) => (
+                        <Button
+                          key={ml}
+                          type="button"
+                          variant={scannedMlQuantity === ml ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => setScannedMlQuantity(ml)}
+                        >
+                          {ml}ml
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label>Or Enter Custom ML</Label>
                     <Input
                       type="number"
                       min="1"
                       value={scannedMlQuantity || ""}
                       onChange={(e) => setScannedMlQuantity(Math.max(0, parseInt(e.target.value) || 0))}
-                      placeholder="e.g., 50, 100, 200"
-                      className="mt-1 text-lg"
+                      placeholder="Enter ML quantity"
+                      className="mt-1 text-lg font-semibold"
                     />
                   </div>
+                  
                   {scannedMlQuantity > 0 && (
                     <div className="p-3 bg-primary/10 rounded-lg">
                       <p className="text-sm">
-                        <span className="font-medium">{scannedMlQuantity}ml</span> at{" "}
-                        <span className="font-medium">
-                          UGX {(scannedProduct.wholesale_price_per_ml || ((scannedProduct.wholesale_price || scannedProduct.price * 0.8) / (scannedProduct.bottle_size_ml || 100)))?.toFixed(0)}/ml
-                        </span>
+                        <span className="font-medium">{scannedMlQuantity}ml</span> × UGX {(scannedProduct.wholesale_price_per_ml || ((scannedProduct.wholesale_price || scannedProduct.price * 0.8) / (scannedProduct.bottle_size_ml || 100)))?.toFixed(0)}/ml
                       </p>
-                      <p className="text-lg font-bold text-primary mt-1">
+                      <p className="text-xl font-bold text-primary mt-1">
                         Total: UGX {(scannedMlQuantity * (scannedProduct.wholesale_price_per_ml || ((scannedProduct.wholesale_price || scannedProduct.price * 0.8) / (scannedProduct.bottle_size_ml || 100)))).toLocaleString()}
                       </p>
                     </div>
