@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Settings as SettingsIcon, Upload, QrCode, Bell } from "lucide-react";
+import { Settings as SettingsIcon, Upload, QrCode, Bell, Mail, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
@@ -35,6 +35,9 @@ const Settings = () => {
     website: "",
     seasonal_remark: "",
     show_back_page: true,
+    report_email_enabled: false,
+    report_email_time: "08:00",
+    report_email_frequency: "daily",
   });
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,9 +91,11 @@ const Settings = () => {
         website: (settings as any).website || "",
         seasonal_remark: (settings as any).seasonal_remark || "",
         show_back_page: (settings as any).show_back_page !== false,
+        report_email_enabled: (settings as any).report_email_enabled || false,
+        report_email_time: (settings as any).report_email_time || "08:00",
+        report_email_frequency: (settings as any).report_email_frequency || "daily",
       });
     } else if (selectedDepartmentId && selectedDepartmentId !== "global" && !departmentSettings) {
-      // Reset to defaults when switching to a department without settings
       setFormData({
         business_name: "",
         business_address: "",
@@ -102,6 +107,9 @@ const Settings = () => {
         website: "",
         seasonal_remark: "",
         show_back_page: true,
+        report_email_enabled: false,
+        report_email_time: "08:00",
+        report_email_frequency: "daily",
       });
     }
   }, [selectedDepartmentId, departmentSettings, globalSettings]);
@@ -489,6 +497,77 @@ const Settings = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {isAdmin && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Mail className="w-5 h-5" />
+                        Email Report Scheduling
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        Receive daily or weekly reports of all departments via email.
+                      </p>
+                      
+                      <div className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="space-y-0.5">
+                          <Label>Enable Email Reports</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Receive department summaries at scheduled times
+                          </p>
+                        </div>
+                        <Switch
+                          checked={formData.report_email_enabled}
+                          onCheckedChange={(checked) =>
+                            setFormData({ ...formData, report_email_enabled: checked })
+                          }
+                        />
+                      </div>
+
+                      {formData.report_email_enabled && (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="flex items-center gap-2">
+                              <Clock className="w-4 h-4" />
+                              Report Time
+                            </Label>
+                            <Input
+                              type="time"
+                              value={formData.report_email_time}
+                              onChange={(e) =>
+                                setFormData({ ...formData, report_email_time: e.target.value })
+                              }
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Report Frequency</Label>
+                            <Select 
+                              value={formData.report_email_frequency} 
+                              onValueChange={(value) =>
+                                setFormData({ ...formData, report_email_frequency: value })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="daily">Daily</SelectItem>
+                                <SelectItem value="weekly">Weekly (Monday)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground">
+                            Reports will be sent to: {formData.business_email || "Set business email above"}
+                          </p>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {isAdmin && (
                   <Card>
