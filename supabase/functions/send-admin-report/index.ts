@@ -22,11 +22,20 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // Parse request body for test mode
+    let testMode = false;
+    try {
+      const body = await req.json();
+      testMode = body?.testMode === true;
+    } catch {
+      // No body or invalid JSON, proceed normally
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log("Starting admin report generation...");
+    console.log("Starting admin report generation...", { testMode });
 
     // Get settings to check if email reports are enabled
     const { data: settings, error: settingsError } = await supabase
@@ -40,7 +49,8 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Failed to fetch settings");
     }
 
-    if (!settings?.report_email_enabled) {
+    // Skip enabled check for test mode
+    if (!testMode && !settings?.report_email_enabled) {
       console.log("Email reports are disabled");
       return new Response(
         JSON.stringify({ message: "Email reports are disabled" }),
