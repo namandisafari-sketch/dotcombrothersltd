@@ -1370,6 +1370,7 @@ export type Database = {
       settings: {
         Row: {
           admin_email: string | null
+          admin_report_email: string | null
           business_address: string | null
           business_email: string | null
           business_name: string | null
@@ -1394,6 +1395,7 @@ export type Database = {
         }
         Insert: {
           admin_email?: string | null
+          admin_report_email?: string | null
           business_address?: string | null
           business_email?: string | null
           business_name?: string | null
@@ -1418,6 +1420,7 @@ export type Database = {
         }
         Update: {
           admin_email?: string | null
+          admin_report_email?: string | null
           business_address?: string | null
           business_email?: string | null
           business_name?: string | null

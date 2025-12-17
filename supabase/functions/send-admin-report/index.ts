@@ -48,11 +48,11 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const adminEmail = settings.business_email;
+    const adminEmail = settings.admin_report_email;
     if (!adminEmail) {
-      console.log("No admin email configured");
+      console.log("No admin report email configured");
       return new Response(
-        JSON.stringify({ message: "No admin email configured" }),
+        JSON.stringify({ message: "No admin report email configured. Please set it in Settings." }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

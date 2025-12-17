@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Settings as SettingsIcon, Upload, QrCode, Bell, Mail, Clock } from "lucide-react";
+import { Settings as SettingsIcon, Upload, QrCode, Bell, Mail, Clock, Send } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
@@ -38,7 +38,9 @@ const Settings = () => {
     report_email_enabled: false,
     report_email_time: "08:00",
     report_email_frequency: "daily",
+    admin_report_email: "",
   });
+  const [isSendingTestReport, setIsSendingTestReport] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptLogoInputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +96,7 @@ const Settings = () => {
         report_email_enabled: (settings as any).report_email_enabled || false,
         report_email_time: (settings as any).report_email_time || "08:00",
         report_email_frequency: (settings as any).report_email_frequency || "daily",
+        admin_report_email: (settings as any).admin_report_email || "",
       });
     } else if (selectedDepartmentId && selectedDepartmentId !== "global" && !departmentSettings) {
       setFormData({
@@ -110,6 +113,7 @@ const Settings = () => {
         report_email_enabled: false,
         report_email_time: "08:00",
         report_email_frequency: "daily",
+        admin_report_email: "",
       });
     }
   }, [selectedDepartmentId, departmentSettings, globalSettings]);
@@ -529,6 +533,21 @@ const Settings = () => {
                       {formData.report_email_enabled && (
                         <>
                           <div className="space-y-2">
+                            <Label>Admin Report Email</Label>
+                            <Input
+                              type="email"
+                              value={formData.admin_report_email}
+                              onChange={(e) =>
+                                setFormData({ ...formData, admin_report_email: e.target.value })
+                              }
+                              placeholder="admin@example.com"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Reports will be sent to this email address
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
                             <Label className="flex items-center gap-2">
                               <Clock className="w-4 h-4" />
                               Report Time
@@ -560,9 +579,33 @@ const Settings = () => {
                             </Select>
                           </div>
 
-                          <p className="text-xs text-muted-foreground">
-                            Reports will be sent to: {formData.business_email || "Set business email above"}
-                          </p>
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            disabled={!formData.admin_report_email || isSendingTestReport}
+                            onClick={async () => {
+                              if (!formData.admin_report_email) {
+                                toast.error("Please enter an admin report email first");
+                                return;
+                              }
+                              setIsSendingTestReport(true);
+                              try {
+                                const { error } = await supabase.functions.invoke("send-admin-report", {
+                                  body: { testMode: true }
+                                });
+                                if (error) throw error;
+                                toast.success("Test report sent! Check your email.");
+                              } catch (error: any) {
+                                console.error("Failed to send test report:", error);
+                                toast.error("Failed to send test report: " + (error.message || "Unknown error"));
+                              } finally {
+                                setIsSendingTestReport(false);
+                              }
+                            }}
+                          >
+                            <Send className="w-4 h-4 mr-2" />
+                            {isSendingTestReport ? "Sending..." : "Send Test Report Now"}
+                          </Button>
                         </>
                       )}
                     </CardContent>
