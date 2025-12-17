@@ -67,6 +67,13 @@ const PerfumePOS = () => {
   const [showNoCustomerWarning, setShowNoCustomerWarning] = useState(false);
   const [showParkDialog, setShowParkDialog] = useState(false);
   const [parkReason, setParkReason] = useState("");
+  
+  // Scanned product dialog state for wholesale/retail selection
+  const [showScannedProductDialog, setShowScannedProductDialog] = useState(false);
+  const [scannedProduct, setScannedProduct] = useState<any>(null);
+  const [scannedCustomerType, setScannedCustomerType] = useState<"retail" | "wholesale">("retail");
+  const [scannedMlQuantity, setScannedMlQuantity] = useState<number>(0);
+  const [scannedUnitQuantity, setScannedUnitQuantity] = useState<number>(1);
 
   // Parked carts state with localStorage persistence
   const PARKED_CARTS_KEY = "perfume-pos-parked-carts";
@@ -175,7 +182,7 @@ const PerfumePOS = () => {
     enabled: !!selectedDepartmentId,
   });
 
-  // Handle barcode scanning to auto-add to cart
+  // Handle barcode scanning - show dialog for customer type selection
   const handleBarcodeSearch = async (scannedBarcode: string) => {
     if (!scannedBarcode || !selectedDepartmentId) return;
     
@@ -205,9 +212,8 @@ const PerfumePOS = () => {
       return;
     }
     
-    // Auto-add single matched product to cart
     const product = matchedProducts[0];
-    const currentStock = product.current_stock || product.stock || 0;
+    const currentStock = product.current_stock || product.stock || product.total_ml || 0;
     
     if (currentStock <= 0) {
       toast.error(`${product.name} is out of stock`);
@@ -215,23 +221,59 @@ const PerfumePOS = () => {
       return;
     }
     
-    // Use direct retail_price field
-    const retailPrice = product.retail_price || product.price;
-    
-    addToCart({
-      id: `barcode-${product.id}-${Date.now()}`,
-      name: product.name,
-      price: retailPrice,
-      quantity: 1,
-      type: "shop_product",
-      productId: product.id,
-      customerType: "retail",
-      subtotal: retailPrice,
-      trackingType: product.tracking_type || "quantity",
-    });
-    
-    toast.success(`${product.name} added to cart`);
+    // Show dialog for customer type and quantity selection
+    setScannedProduct(product);
+    setScannedCustomerType("retail");
+    setScannedMlQuantity(0);
+    setScannedUnitQuantity(1);
+    setShowScannedProductDialog(true);
     setBarcode("");
+  };
+
+  // Add scanned product to cart with selected options
+  const addScannedProductToCart = () => {
+    if (!scannedProduct) return;
+    
+    const retailPrice = scannedProduct.retail_price || scannedProduct.price;
+    const wholesalePrice = scannedProduct.wholesale_price || retailPrice * 0.8;
+    const pricePerMl = scannedProduct.wholesale_price_per_ml || (wholesalePrice / (scannedProduct.bottle_size_ml || 100));
+    
+    if (scannedCustomerType === "wholesale" && scannedMlQuantity > 0) {
+      // Wholesale by ML
+      const totalPrice = scannedMlQuantity * pricePerMl;
+      addToCart({
+        id: `scan-wholesale-${scannedProduct.id}-${Date.now()}`,
+        name: `${scannedProduct.name} (${scannedMlQuantity}ml)`,
+        price: totalPrice,
+        quantity: 1,
+        type: "shop_product",
+        productId: scannedProduct.id,
+        customerType: "wholesale",
+        totalMl: scannedMlQuantity,
+        pricePerMl: pricePerMl,
+        subtotal: totalPrice,
+        trackingType: "ml",
+      });
+      toast.success(`${scannedProduct.name} - ${scannedMlQuantity}ml (Wholesale) added to cart`);
+    } else {
+      // Retail by unit or wholesale by unit
+      const price = scannedCustomerType === "retail" ? retailPrice : wholesalePrice;
+      addToCart({
+        id: `scan-${scannedCustomerType}-${scannedProduct.id}-${Date.now()}`,
+        name: scannedProduct.name,
+        price: price,
+        quantity: scannedUnitQuantity,
+        type: "shop_product",
+        productId: scannedProduct.id,
+        customerType: scannedCustomerType,
+        subtotal: price * scannedUnitQuantity,
+        trackingType: "quantity",
+      });
+      toast.success(`${scannedProduct.name} x${scannedUnitQuantity} (${scannedCustomerType}) added to cart`);
+    }
+    
+    setShowScannedProductDialog(false);
+    setScannedProduct(null);
   };
 
   // Fetch customers
@@ -719,6 +761,48 @@ const PerfumePOS = () => {
             </ScentLookupDialog>
           </div>
 
+          {/* Quick Scan Section - Prominent at Top */}
+          <Card className="border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10">
+            <CardContent className="py-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="p-3 bg-primary/10 rounded-full">
+                    <Barcode className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-sm font-semibold text-primary">Quick Product Scan</Label>
+                    <Input
+                      placeholder="Scan barcode or enter product code..."
+                      value={barcode}
+                      onChange={(e) => setBarcode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && barcode) {
+                          handleBarcodeSearch(barcode);
+                        }
+                      }}
+                      className="mt-1 text-lg h-12 border-primary/30 focus:border-primary"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => barcode && handleBarcodeSearch(barcode)}
+                    disabled={!barcode}
+                  >
+                    <Barcode className="w-4 h-4 mr-2" />
+                    Search
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 text-center md:text-left">
+                Scan a product barcode to quickly add to cart. For wholesale customers, you can specify ML quantity.
+              </p>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
             {/* Perfume Creation Area */}
             <div className="lg:col-span-2 space-y-4">
@@ -730,22 +814,6 @@ const PerfumePOS = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="relative">
-                    <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Scan barcode to add product..."
-                      value={barcode}
-                      onChange={(e) => setBarcode(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && barcode) {
-                          handleBarcodeSearch(barcode);
-                        }
-                      }}
-                      className="pl-10"
-                      autoFocus
-                    />
-                  </div>
-                  
                   <Button
                     onClick={() => {
                       setSelectedCustomerId(selectedCustomer);
@@ -1182,6 +1250,126 @@ const PerfumePOS = () => {
             <Button onClick={parkCurrentCart}>
               <Clock className="h-4 w-4 mr-2" />
               Park Cart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scanned Product Dialog - Choose Retail/Wholesale and Quantity */}
+      <Dialog open={showScannedProductDialog} onOpenChange={setShowScannedProductDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Barcode className="h-5 w-5 text-primary" />
+              Add Scanned Product
+            </DialogTitle>
+          </DialogHeader>
+          {scannedProduct && (
+            <div className="space-y-4">
+              {/* Product Info */}
+              <div className="p-4 bg-muted rounded-lg">
+                <h3 className="font-semibold text-lg">{scannedProduct.name}</h3>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  <Badge variant="outline">
+                    Retail: UGX {(scannedProduct.retail_price || scannedProduct.price)?.toLocaleString()}
+                  </Badge>
+                  <Badge variant="outline">
+                    Wholesale: UGX {(scannedProduct.wholesale_price || (scannedProduct.retail_price || scannedProduct.price) * 0.8)?.toLocaleString()}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Customer Type Selection */}
+              <div>
+                <Label className="text-sm font-medium">Customer Type</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <Button
+                    type="button"
+                    variant={scannedCustomerType === "retail" ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => {
+                      setScannedCustomerType("retail");
+                      setScannedMlQuantity(0);
+                    }}
+                  >
+                    <ShoppingBag className="w-4 h-4 mr-2" />
+                    Retail
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={scannedCustomerType === "wholesale" ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => setScannedCustomerType("wholesale")}
+                  >
+                    <Package className="w-4 h-4 mr-2" />
+                    Wholesale
+                  </Button>
+                </div>
+              </div>
+
+              {/* Quantity Input */}
+              {scannedCustomerType === "retail" ? (
+                <div>
+                  <Label>Quantity (Units)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={scannedUnitQuantity}
+                    onChange={(e) => setScannedUnitQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="mt-1"
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Total: UGX {((scannedProduct.retail_price || scannedProduct.price) * scannedUnitQuantity).toLocaleString()}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      Wholesale - Measure by ML
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Enter the exact MLs the customer is taking
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Quantity in ML</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={scannedMlQuantity || ""}
+                      onChange={(e) => setScannedMlQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="e.g., 50, 100, 200"
+                      className="mt-1 text-lg"
+                    />
+                  </div>
+                  {scannedMlQuantity > 0 && (
+                    <div className="p-3 bg-primary/10 rounded-lg">
+                      <p className="text-sm">
+                        <span className="font-medium">{scannedMlQuantity}ml</span> at{" "}
+                        <span className="font-medium">
+                          UGX {(scannedProduct.wholesale_price_per_ml || ((scannedProduct.wholesale_price || scannedProduct.price * 0.8) / (scannedProduct.bottle_size_ml || 100)))?.toFixed(0)}/ml
+                        </span>
+                      </p>
+                      <p className="text-lg font-bold text-primary mt-1">
+                        Total: UGX {(scannedMlQuantity * (scannedProduct.wholesale_price_per_ml || ((scannedProduct.wholesale_price || scannedProduct.price * 0.8) / (scannedProduct.bottle_size_ml || 100)))).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowScannedProductDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={addScannedProductToCart}
+              disabled={scannedCustomerType === "wholesale" && scannedMlQuantity <= 0}
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Add to Cart
             </Button>
           </DialogFooter>
         </DialogContent>
