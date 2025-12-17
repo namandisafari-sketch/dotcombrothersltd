@@ -515,99 +515,108 @@ const Settings = () => {
                         Receive daily or weekly reports of all departments via email.
                       </p>
                       
-                      <div className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="space-y-0.5">
-                          <Label>Enable Email Reports</Label>
-                          <p className="text-xs text-muted-foreground">
-                            Receive department summaries at scheduled times
-                          </p>
-                        </div>
-                        <Switch
-                          checked={formData.report_email_enabled}
-                          onCheckedChange={(checked) =>
-                            setFormData({ ...formData, report_email_enabled: checked })
+                      <div className="space-y-2">
+                        <Label>Admin Report Email</Label>
+                        <Input
+                          type="email"
+                          value={formData.admin_report_email}
+                          onChange={(e) =>
+                            setFormData({ ...formData, admin_report_email: e.target.value })
                           }
+                          placeholder="admin@example.com"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Reports will be sent to this email address. Save settings before testing.
+                        </p>
                       </div>
 
-                      {formData.report_email_enabled && (
-                        <>
-                          <div className="space-y-2">
-                            <Label>Admin Report Email</Label>
-                            <Input
-                              type="email"
-                              value={formData.admin_report_email}
-                              onChange={(e) =>
-                                setFormData({ ...formData, admin_report_email: e.target.value })
-                              }
-                              placeholder="admin@example.com"
-                            />
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        disabled={!formData.admin_report_email || isSendingTestReport}
+                        onClick={async () => {
+                          if (!formData.admin_report_email) {
+                            toast.error("Please enter an admin report email first");
+                            return;
+                          }
+                          setIsSendingTestReport(true);
+                          try {
+                            const response = await supabase.functions.invoke("send-admin-report", {
+                              body: { testMode: true }
+                            });
+                            if (response.error) throw response.error;
+                            const data = response.data;
+                            if (data?.success) {
+                              toast.success("Test report sent! Check your email.");
+                            } else if (data?.message) {
+                              toast.error(data.message);
+                            } else {
+                              toast.error("Unknown response from server");
+                            }
+                          } catch (error: any) {
+                            console.error("Failed to send test report:", error);
+                            toast.error("Failed to send test report: " + (error.message || "Unknown error"));
+                          } finally {
+                            setIsSendingTestReport(false);
+                          }
+                        }}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {isSendingTestReport ? "Sending..." : "Send Test Report Now"}
+                      </Button>
+
+                      <div className="border-t pt-4 mt-4">
+                        <div className="flex items-center justify-between p-3 border rounded-lg mb-4">
+                          <div className="space-y-0.5">
+                            <Label>Enable Scheduled Reports</Label>
                             <p className="text-xs text-muted-foreground">
-                              Reports will be sent to this email address
+                              Automatically send reports at scheduled times
                             </p>
                           </div>
+                          <Switch
+                            checked={formData.report_email_enabled}
+                            onCheckedChange={(checked) =>
+                              setFormData({ ...formData, report_email_enabled: checked })
+                            }
+                          />
+                        </div>
 
-                          <div className="space-y-2">
-                            <Label className="flex items-center gap-2">
-                              <Clock className="w-4 h-4" />
-                              Report Time
-                            </Label>
-                            <Input
-                              type="time"
-                              value={formData.report_email_time}
-                              onChange={(e) =>
-                                setFormData({ ...formData, report_email_time: e.target.value })
-                              }
-                            />
-                          </div>
+                        {formData.report_email_enabled && (
+                          <>
+                            <div className="space-y-2 mb-4">
+                              <Label className="flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Report Time
+                              </Label>
+                              <Input
+                                type="time"
+                                value={formData.report_email_time}
+                                onChange={(e) =>
+                                  setFormData({ ...formData, report_email_time: e.target.value })
+                                }
+                              />
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label>Report Frequency</Label>
-                            <Select 
-                              value={formData.report_email_frequency} 
-                              onValueChange={(value) =>
-                                setFormData({ ...formData, report_email_frequency: value })
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="daily">Daily</SelectItem>
-                                <SelectItem value="weekly">Weekly (Monday)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            disabled={!formData.admin_report_email || isSendingTestReport}
-                            onClick={async () => {
-                              if (!formData.admin_report_email) {
-                                toast.error("Please enter an admin report email first");
-                                return;
-                              }
-                              setIsSendingTestReport(true);
-                              try {
-                                const { error } = await supabase.functions.invoke("send-admin-report", {
-                                  body: { testMode: true }
-                                });
-                                if (error) throw error;
-                                toast.success("Test report sent! Check your email.");
-                              } catch (error: any) {
-                                console.error("Failed to send test report:", error);
-                                toast.error("Failed to send test report: " + (error.message || "Unknown error"));
-                              } finally {
-                                setIsSendingTestReport(false);
-                              }
-                            }}
-                          >
-                            <Send className="w-4 h-4 mr-2" />
-                            {isSendingTestReport ? "Sending..." : "Send Test Report Now"}
-                          </Button>
-                        </>
-                      )}
+                            <div className="space-y-2">
+                              <Label>Report Frequency</Label>
+                              <Select 
+                                value={formData.report_email_frequency} 
+                                onValueChange={(value) =>
+                                  setFormData({ ...formData, report_email_frequency: value })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="daily">Daily</SelectItem>
+                                  <SelectItem value="weekly">Weekly (Monday)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 )}
