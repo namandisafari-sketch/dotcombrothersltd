@@ -69,7 +69,6 @@ const CustomerScentMemory = lazy(() => import("./pages/CustomerScentMemory"));
 const ScentCheckInQR = lazy(() => import("./pages/ScentCheckInQR"));
 const DataImport = lazy(() => import("./pages/DataImport"));
 const UserAccountsGuide = lazy(() => import("./pages/UserAccountsGuide"));
-const Welcome = lazy(() => import("./pages/Welcome"));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -149,8 +148,7 @@ const App = () => (
                 
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/" element={<Welcome />} />
-                    <Route path="/home" element={<LandingPage />} />
+                    <Route path="/" element={<LandingPage />} />
                     <Route path="/auth" element={<Auth />} />
                     <Route element={<AppLayout><ProtectedRoute /></AppLayout>}>
                       <Route path="/dashboard" element={<Dashboard />} />

@@ -1381,6 +1381,9 @@ export type Database = {
           logo_url: string | null
           receipt_footer: string | null
           receipt_logo_url: string | null
+          report_email_enabled: boolean | null
+          report_email_frequency: string | null
+          report_email_time: string | null
           seasonal_remark: string | null
           settings_json: Json | null
           show_back_page: boolean | null
@@ -1402,6 +1405,9 @@ export type Database = {
           logo_url?: string | null
           receipt_footer?: string | null
           receipt_logo_url?: string | null
+          report_email_enabled?: boolean | null
+          report_email_frequency?: string | null
+          report_email_time?: string | null
           seasonal_remark?: string | null
           settings_json?: Json | null
           show_back_page?: boolean | null
@@ -1423,6 +1429,9 @@ export type Database = {
           logo_url?: string | null
           receipt_footer?: string | null
           receipt_logo_url?: string | null
+          report_email_enabled?: boolean | null
+          report_email_frequency?: string | null
+          report_email_time?: string | null
           seasonal_remark?: string | null
           settings_json?: Json | null
           show_back_page?: boolean | null
