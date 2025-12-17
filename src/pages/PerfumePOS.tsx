@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag, History, AlertTriangle } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Sparkles, Barcode, UserPlus, Package, ShoppingBag, History, AlertTriangle, PauseCircle, Clock } from "lucide-react";
 import { ScentLookupDialog } from "@/components/perfume/ScentLookupDialog";
 import { toast } from "sonner";
 import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
@@ -20,6 +20,8 @@ import { ReceiptEditDialog } from "@/components/ReceiptEditDialog";
 import { PerfumeRefillDialog } from "@/components/inventory/PerfumeRefillDialog";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import { CustomerPurchaseHistory } from "@/components/perfume/CustomerPurchaseHistory";
+import { ParkedCartsPanel } from "@/components/pos/ParkedCartsPanel";
 
 interface CartItem {
   id: string;
@@ -63,8 +65,100 @@ const PerfumePOS = () => {
     address: "",
   });
   const [showNoCustomerWarning, setShowNoCustomerWarning] = useState(false);
+  const [showParkDialog, setShowParkDialog] = useState(false);
+  const [parkReason, setParkReason] = useState("");
 
-  // Fetch perfume products (exclude Oil Perfume master stock)
+  // Parked carts state with localStorage persistence
+  const PARKED_CARTS_KEY = "perfume-pos-parked-carts";
+  const [parkedCarts, setParkedCarts] = useState<Array<{
+    id: string;
+    name: string;
+    items: CartItem[];
+    customerName: string;
+    customerId: string | null;
+    parkedAt: Date;
+    reason?: string;
+  }>>(() => {
+    const saved = localStorage.getItem(PARKED_CARTS_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // Save parked carts to localStorage
+  useEffect(() => {
+    localStorage.setItem(PARKED_CARTS_KEY, JSON.stringify(parkedCarts));
+  }, [parkedCarts]);
+
+  const parkCurrentCart = () => {
+    if (cart.length === 0) {
+      toast.error("Cart is empty");
+      return;
+    }
+    
+    const parkedCart = {
+      id: `parked-${Date.now()}`,
+      name: customerName || "Walk-in",
+      items: [...cart],
+      customerName: customerName,
+      customerId: selectedCustomerId,
+      parkedAt: new Date(),
+      reason: parkReason,
+    };
+    
+    setParkedCarts(prev => [...prev, parkedCart]);
+    setCart([]);
+    setCustomerName("Walk-in");
+    setSelectedCustomer("");
+    setSelectedCustomerId(null);
+    setCustomerEmail("");
+    setParkReason("");
+    setShowParkDialog(false);
+    toast.success("Cart parked successfully");
+  };
+
+  const resumeParkedCart = (parkedCartId: string) => {
+    const parked = parkedCarts.find(p => p.id === parkedCartId);
+    if (!parked) return;
+
+    // If current cart has items, ask to park it first
+    if (cart.length > 0) {
+      toast.error("Please complete or park current cart first");
+      return;
+    }
+
+    setCart(parked.items);
+    setCustomerName(parked.customerName);
+    if (parked.customerId) {
+      setSelectedCustomer(parked.customerId);
+      setSelectedCustomerId(parked.customerId);
+    }
+    setParkedCarts(prev => prev.filter(p => p.id !== parkedCartId));
+    toast.success("Cart resumed");
+  };
+
+  const deleteParkedCart = (parkedCartId: string) => {
+    setParkedCarts(prev => prev.filter(p => p.id !== parkedCartId));
+    toast.success("Parked cart deleted");
+  };
+
+  // Handle reorder from customer history
+  const handleReorder = (items: CartItem[]) => {
+    if (cart.length > 0) {
+      // Ask if they want to add to existing cart
+      setCart(prev => [...prev, ...items]);
+      toast.success(`Added ${items.length} items to cart`);
+    } else {
+      setCart(items);
+      toast.success("Previous order added to cart");
+    }
+  };
+
   const { data: perfumeProducts = [] } = useQuery({
     queryKey: ["perfume-products", selectedDepartmentId],
     queryFn: async () => {
@@ -806,12 +900,33 @@ const PerfumePOS = () => {
                       ))}
                     </div>
                   )}
+                  
+                  {/* Park Cart Button */}
+                  {cart.length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setShowParkDialog(true)}
+                      >
+                        <PauseCircle className="w-4 h-4 mr-2" />
+                        Park Cart
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
 
             {/* Payment Section */}
             <div className="space-y-4">
+              {/* Parked Carts */}
+              <ParkedCartsPanel
+                parkedCarts={parkedCarts}
+                onResume={resumeParkedCart}
+                onDelete={deleteParkedCart}
+              />
+
               <Card>
                 <CardHeader>
                   <CardTitle>Payment Details</CardTitle>
@@ -870,6 +985,15 @@ const PerfumePOS = () => {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Customer Purchase History */}
+                  {selectedCustomer && selectedDepartmentId && (
+                    <CustomerPurchaseHistory
+                      customerId={selectedCustomer}
+                      departmentId={selectedDepartmentId}
+                      onReorder={handleReorder}
+                    />
+                  )}
 
                   <div>
                     <Label>Payment Method</Label>
@@ -1019,6 +1143,49 @@ const PerfumePOS = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Park Cart Dialog */}
+      <Dialog open={showParkDialog} onOpenChange={setShowParkDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PauseCircle className="h-5 w-5" />
+              Park Cart
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Park this cart to serve another customer. You can resume it later.
+            </p>
+            <div>
+              <Label>Reason (Optional)</Label>
+              <Input
+                value={parkReason}
+                onChange={(e) => setParkReason(e.target.value)}
+                placeholder="e.g., Customer went to get money"
+              />
+            </div>
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="text-sm font-medium">Cart Summary</p>
+              <p className="text-sm text-muted-foreground">
+                Customer: {customerName}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Items: {cart.length} • Total: UGX {total.toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowParkDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={parkCurrentCart}>
+              <Clock className="h-4 w-4 mr-2" />
+              Park Cart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
