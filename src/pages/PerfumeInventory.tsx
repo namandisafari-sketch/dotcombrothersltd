@@ -91,6 +91,8 @@ export default function PerfumeInventory() {
     barcode: "",
     cost_price: 0,
     price: 0,
+    retail_price: 0,
+    wholesale_price: 0,
     stock: 0,
     min_stock: 10,
     sku: "",
@@ -343,6 +345,14 @@ export default function PerfumeInventory() {
   // Shop product mutations
   const saveProductMutation = useMutation({
     mutationFn: async () => {
+      // Validate retail and wholesale prices
+      if (!productForm.retail_price || productForm.retail_price <= 0) {
+        throw new Error("Retail price is required");
+      }
+      if (!productForm.wholesale_price || productForm.wholesale_price <= 0) {
+        throw new Error("Wholesale price is required");
+      }
+      
       if (editingProduct) {
         const { error } = await supabase
           .from("products")
@@ -351,7 +361,9 @@ export default function PerfumeInventory() {
             description: productForm.description,
             barcode: productForm.barcode,
             cost_price: productForm.cost_price,
-            price: productForm.price,
+            price: productForm.retail_price, // Use retail price as default price
+            retail_price: productForm.retail_price,
+            wholesale_price: productForm.wholesale_price,
             stock: productForm.stock,
             min_stock: productForm.min_stock,
             sku: productForm.sku,
@@ -370,7 +382,9 @@ export default function PerfumeInventory() {
             description: productForm.description,
             barcode: productForm.barcode,
             cost_price: productForm.cost_price,
-            price: productForm.price,
+            price: productForm.retail_price, // Use retail price as default price
+            retail_price: productForm.retail_price,
+            wholesale_price: productForm.wholesale_price,
             stock: productForm.stock,
             min_stock: productForm.min_stock,
             sku: productForm.sku,
@@ -390,6 +404,9 @@ export default function PerfumeInventory() {
       refetchShopProducts();
       setProductDialogOpen(false);
       resetProductForm();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to save product");
     },
   });
 
@@ -416,6 +433,8 @@ export default function PerfumeInventory() {
       barcode: "",
       cost_price: 0,
       price: 0,
+      retail_price: 0,
+      wholesale_price: 0,
       stock: 0,
       min_stock: 10,
       sku: "",
@@ -435,6 +454,8 @@ export default function PerfumeInventory() {
       barcode: product.barcode || "",
       cost_price: product.cost_price || 0,
       price: product.price,
+      retail_price: (product as any).retail_price || product.price || 0,
+      wholesale_price: (product as any).wholesale_price || 0,
       stock: product.stock || 0,
       min_stock: product.min_stock || 10,
       sku: product.sku || "",
@@ -893,11 +914,21 @@ export default function PerfumeInventory() {
                   />
                 </div>
                 <div>
-                  <Label>Selling Price (UGX) *</Label>
+                  <Label>Retail Price (UGX) *</Label>
                   <Input
                     type="number"
-                    value={productForm.price}
-                    onChange={(e) => setProductForm({...productForm, price: Number(e.target.value)})}
+                    value={productForm.retail_price || ""}
+                    onChange={(e) => setProductForm({...productForm, retail_price: Number(e.target.value)})}
+                    placeholder="Price for retail customers"
+                  />
+                </div>
+                <div>
+                  <Label>Wholesale Price (UGX) *</Label>
+                  <Input
+                    type="number"
+                    value={productForm.wholesale_price || ""}
+                    onChange={(e) => setProductForm({...productForm, wholesale_price: Number(e.target.value)})}
+                    placeholder="Price for wholesale customers"
                   />
                 </div>
                 <div>
@@ -972,7 +1003,7 @@ export default function PerfumeInventory() {
               </Button>
               <Button 
                 onClick={() => saveProductMutation.mutate()}
-                disabled={!productForm.name || productForm.cost_price < 0}
+                disabled={!productForm.name || productForm.cost_price < 0 || !productForm.retail_price || !productForm.wholesale_price}
               >
                 {editingProduct ? 'Update' : 'Add'} Product
               </Button>
