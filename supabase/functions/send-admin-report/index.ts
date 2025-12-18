@@ -497,7 +497,7 @@ const handler = async (req: Request): Promise<Response> => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: `${settings?.business_name || "Business"} <onboarding@resend.dev>`,
+        from: `${settings?.business_name || "Business"} <reports@dotcombrothersltd.com>`,
         to: [adminEmail],
         subject: `📊 Business Flow Report - ${today.toLocaleDateString()} - ${formatCurrency(totalRevenue)} (${formatChange(overallChange)})`,
         html: emailHtml,
