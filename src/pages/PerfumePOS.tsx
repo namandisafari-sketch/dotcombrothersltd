@@ -21,6 +21,7 @@ import { PerfumeRefillDialog } from "@/components/inventory/PerfumeRefillDialog"
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useDemoMode } from "@/contexts/DemoModeContext";
 import { CustomerPurchaseHistory } from "@/components/perfume/CustomerPurchaseHistory";
+import { ScentMemoryCard } from "@/components/perfume/ScentMemoryCard";
 import { ParkedCartsPanel } from "@/components/pos/ParkedCartsPanel";
 
 interface CartItem {
@@ -1054,7 +1055,16 @@ const PerfumePOS = () => {
                     </div>
                   </div>
 
-                  {/* Customer Purchase History */}
+                  {/* Scent Memory Card - Shows favorite scents and quick reorder */}
+                  {selectedCustomer && selectedDepartmentId && (
+                    <ScentMemoryCard
+                      customerId={selectedCustomer}
+                      departmentId={selectedDepartmentId}
+                      onQuickReorder={handleReorder}
+                    />
+                  )}
+
+                  {/* Customer Purchase History - Full history with details */}
                   {selectedCustomer && selectedDepartmentId && (
                     <CustomerPurchaseHistory
                       customerId={selectedCustomer}
