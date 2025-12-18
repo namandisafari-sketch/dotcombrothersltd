@@ -28,6 +28,49 @@ interface DepartmentFinancials {
   lowStockItems: string[];
 }
 
+// Helper function to check if report should be sent based on frequency
+function shouldSendScheduledReport(frequency: string, lastSentAt: string | null): { shouldSend: boolean; period: string } {
+  const now = new Date();
+  const currentHour = now.getUTCHours();
+  const currentDay = now.getUTCDay(); // 0 = Sunday
+  const currentDate = now.getUTCDate();
+  
+  // Only send reports between 5-7 AM UTC (adjust for your timezone)
+  if (currentHour < 5 || currentHour > 7) {
+    return { shouldSend: false, period: "current" };
+  }
+  
+  // Check if already sent today
+  if (lastSentAt) {
+    const lastSent = new Date(lastSentAt);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const lastSentDay = new Date(lastSent.getFullYear(), lastSent.getMonth(), lastSent.getDate());
+    
+    if (lastSentDay >= today) {
+      return { shouldSend: false, period: "current" };
+    }
+  }
+  
+  switch (frequency) {
+    case "daily":
+      return { shouldSend: true, period: "current" };
+    case "weekly":
+      // Send on Monday (day 1)
+      if (currentDay === 1) {
+        return { shouldSend: true, period: "current" };
+      }
+      return { shouldSend: false, period: "current" };
+    case "monthly":
+      // Send on 1st of month
+      if (currentDate === 1) {
+        return { shouldSend: true, period: "previous" };
+      }
+      return { shouldSend: false, period: "current" };
+    default:
+      return { shouldSend: false, period: "current" };
+  }
+}
+
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -36,10 +79,15 @@ const handler = async (req: Request): Promise<Response> => {
   try {
     let testMode = false;
     let reportPeriod = "current"; // current, previous, ytd
+    let scheduledMode = false; // Called by cron job
+    let forceMode = false; // Force send regardless of schedule
+    
     try {
       const body = await req.json();
       testMode = body?.testMode === true;
       reportPeriod = body?.period || "current";
+      scheduledMode = body?.scheduled === true;
+      forceMode = body?.force === true;
     } catch {
       // No body or invalid JSON
     }
@@ -48,7 +96,7 @@ const handler = async (req: Request): Promise<Response> => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log("Starting comprehensive admin financial report generation...", { testMode, reportPeriod });
+    console.log("Starting comprehensive admin financial report generation...", { testMode, reportPeriod, scheduledMode, forceMode });
 
     const { data: settings, error: settingsError } = await supabase
       .from("settings")
@@ -61,7 +109,8 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Failed to fetch settings");
     }
 
-    if (!testMode && !settings?.report_email_enabled) {
+    // Check if reports are enabled
+    if (!testMode && !forceMode && !settings?.report_email_enabled) {
       console.log("Email reports are disabled");
       return new Response(
         JSON.stringify({ message: "Email reports are disabled" }),
@@ -76,6 +125,29 @@ const handler = async (req: Request): Promise<Response> => {
         JSON.stringify({ message: "No admin report email configured. Please set it in Settings." }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // If this is a scheduled call, check if we should actually send based on frequency
+    if (scheduledMode && !forceMode && !testMode) {
+      const frequency = settings?.report_email_frequency || "daily";
+      const lastSentAt = settings?.settings_json?.last_report_sent_at || null;
+      
+      const { shouldSend, period } = shouldSendScheduledReport(frequency, lastSentAt);
+      
+      if (!shouldSend) {
+        console.log(`Scheduled report check: Not time to send yet. Frequency: ${frequency}`);
+        return new Response(
+          JSON.stringify({ 
+            message: `Not scheduled to send. Frequency: ${frequency}`,
+            nextCheck: "Will check again on next cron run"
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // Use the period determined by schedule
+      reportPeriod = period;
+      console.log(`Scheduled report: Sending ${frequency} report for period: ${reportPeriod}`);
     }
 
     // Calculate date range based on period
@@ -93,6 +165,20 @@ const handler = async (req: Request): Promise<Response> => {
       startDate = new Date(now.getFullYear(), 0, 1);
       endDate = now;
       periodLabel = `Year to Date (${now.getFullYear()})`;
+    } else if (reportPeriod === "daily") {
+      // Yesterday's report for daily
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      startDate = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 0, 0, 0);
+      endDate = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59);
+      periodLabel = yesterday.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    } else if (reportPeriod === "weekly") {
+      // Last 7 days
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      startDate = new Date(weekAgo.getFullYear(), weekAgo.getMonth(), weekAgo.getDate(), 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
+      periodLabel = `Week of ${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
     } else {
       // Default: current month
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -740,12 +826,31 @@ const handler = async (req: Request): Promise<Response> => {
     const responseData = await emailResponse.json();
     console.log("Email sent successfully:", responseData);
 
+    // Update last sent timestamp in settings for scheduled reports
+    if (scheduledMode || forceMode) {
+      const existingJson = settings?.settings_json || {};
+      const updatedJson = {
+        ...existingJson,
+        last_report_sent_at: now.toISOString(),
+        last_report_period: periodLabel
+      };
+      
+      await supabase
+        .from("settings")
+        .update({ settings_json: updatedJson })
+        .is("department_id", null);
+      
+      console.log("Updated last report sent timestamp");
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: "Financial reports sent successfully",
         emailId: responseData.id,
         period: periodLabel,
+        scheduled: scheduledMode,
+        frequency: settings?.report_email_frequency || "daily",
         summary: {
           totalRevenue,
           totalExpenses,
