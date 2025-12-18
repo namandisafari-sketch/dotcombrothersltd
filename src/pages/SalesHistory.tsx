@@ -167,7 +167,7 @@ const SalesHistory = () => {
     }
 
     if (!settings) {
-      const { data } = await supabase.from("settings").select("*").maybeSingle();
+      const { data } = await supabase.from("settings").select("*").is("department_id", null).maybeSingle();
       settings = data;
     }
 
@@ -200,6 +200,7 @@ const SalesHistory = () => {
         whatsapp: settings?.whatsapp_number || "+256745368426",
       },
       seasonalRemark: settings?.seasonal_remark,
+      showBackPage: settings?.show_back_page !== false,
     };
 
     // Check if on mobile - use mobile print dialog

@@ -98,7 +98,7 @@ const Sales = () => {
   const { data: globalSettings } = useQuery({
     queryKey: ["global-settings"],
     queryFn: async () => {
-      const { data } = await supabase.from("settings").select("*").maybeSingle();
+      const { data } = await supabase.from("settings").select("*").is("department_id", null).maybeSingle();
       return data;
     },
   });

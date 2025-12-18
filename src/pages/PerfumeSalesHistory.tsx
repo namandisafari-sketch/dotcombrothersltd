@@ -127,11 +127,11 @@ const PerfumeSalesHistory = () => {
   };
 
   const prepareReceiptData = async (sale: any) => {
-    // Fetch settings for receipt
+    // Fetch settings for receipt from the settings table (not department_settings)
     let settings = null;
     if (sale.department_id) {
       const { data: deptSettings } = await supabase
-        .from("department_settings")
+        .from("settings")
         .select("*")
         .eq("department_id", sale.department_id)
         .maybeSingle();
@@ -142,6 +142,7 @@ const PerfumeSalesHistory = () => {
       const { data: globalSettings } = await supabase
         .from("settings")
         .select("*")
+        .is("department_id", null)
         .maybeSingle();
       settings = globalSettings;
     }
@@ -192,6 +193,7 @@ const PerfumeSalesHistory = () => {
         whatsapp: settings?.whatsapp_number || "+256745368426",
       },
       seasonalRemark: settings?.seasonal_remark,
+      showBackPage: settings?.show_back_page !== false,
     };
   };
 
