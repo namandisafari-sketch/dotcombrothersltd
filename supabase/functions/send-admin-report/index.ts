@@ -28,16 +28,33 @@ interface DepartmentFinancials {
   lowStockItems: string[];
 }
 
-// Helper function to check if report should be sent based on frequency
-function shouldSendScheduledReport(frequency: string, lastSentAt: string | null): { shouldSend: boolean; period: string } {
+// Helper function to check if report should be sent based on frequency and configured time
+function shouldSendScheduledReport(
+  frequency: string, 
+  configuredTime: string, // Format: "HH:MM" (e.g., "08:00")
+  lastSentAt: string | null
+): { shouldSend: boolean; period: string; reason: string } {
   const now = new Date();
   const currentHour = now.getUTCHours();
+  const currentMinute = now.getUTCMinutes();
   const currentDay = now.getUTCDay(); // 0 = Sunday
   const currentDate = now.getUTCDate();
   
-  // Only send reports between 5-7 AM UTC (adjust for your timezone)
-  if (currentHour < 5 || currentHour > 7) {
-    return { shouldSend: false, period: "current" };
+  // Parse configured time (default to 08:00 if invalid)
+  const [configHourStr, configMinStr] = (configuredTime || "08:00").split(":");
+  const configHour = parseInt(configHourStr, 10) || 8;
+  const configMin = parseInt(configMinStr, 10) || 0;
+  
+  // Check if current hour matches configured hour (with 1-hour window for cron timing)
+  const isCorrectHour = currentHour === configHour || 
+    (currentHour === configHour + 1 && currentMinute < 30); // Allow 30 min buffer
+  
+  if (!isCorrectHour) {
+    return { 
+      shouldSend: false, 
+      period: "current", 
+      reason: `Not the scheduled time. Current: ${currentHour}:${currentMinute} UTC, Configured: ${configHour}:${configMin} UTC` 
+    };
   }
   
   // Check if already sent today
@@ -47,27 +64,28 @@ function shouldSendScheduledReport(frequency: string, lastSentAt: string | null)
     const lastSentDay = new Date(lastSent.getFullYear(), lastSent.getMonth(), lastSent.getDate());
     
     if (lastSentDay >= today) {
-      return { shouldSend: false, period: "current" };
+      return { shouldSend: false, period: "current", reason: "Report already sent today" };
     }
   }
   
+  // Check frequency rules
   switch (frequency) {
     case "daily":
-      return { shouldSend: true, period: "current" };
+      return { shouldSend: true, period: "daily", reason: "Daily report scheduled" };
     case "weekly":
       // Send on Monday (day 1)
       if (currentDay === 1) {
-        return { shouldSend: true, period: "current" };
+        return { shouldSend: true, period: "weekly", reason: "Weekly report (Monday)" };
       }
-      return { shouldSend: false, period: "current" };
+      return { shouldSend: false, period: "current", reason: `Weekly report only sends on Monday. Today is day ${currentDay}` };
     case "monthly":
       // Send on 1st of month
       if (currentDate === 1) {
-        return { shouldSend: true, period: "previous" };
+        return { shouldSend: true, period: "previous", reason: "Monthly report (1st of month)" };
       }
-      return { shouldSend: false, period: "current" };
+      return { shouldSend: false, period: "current", reason: `Monthly report only sends on 1st. Today is day ${currentDate}` };
     default:
-      return { shouldSend: false, period: "current" };
+      return { shouldSend: false, period: "current", reason: `Unknown frequency: ${frequency}` };
   }
 }
 
@@ -127,18 +145,21 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // If this is a scheduled call, check if we should actually send based on frequency
+    // If this is a scheduled call, check if we should actually send based on frequency and time
     if (scheduledMode && !forceMode && !testMode) {
       const frequency = settings?.report_email_frequency || "daily";
+      const configuredTime = settings?.report_email_time || "08:00";
       const lastSentAt = settings?.settings_json?.last_report_sent_at || null;
       
-      const { shouldSend, period } = shouldSendScheduledReport(frequency, lastSentAt);
+      const { shouldSend, period, reason } = shouldSendScheduledReport(frequency, configuredTime, lastSentAt);
       
       if (!shouldSend) {
-        console.log(`Scheduled report check: Not time to send yet. Frequency: ${frequency}`);
+        console.log(`Scheduled report check: ${reason}`);
         return new Response(
           JSON.stringify({ 
-            message: `Not scheduled to send. Frequency: ${frequency}`,
+            message: reason,
+            frequency,
+            configuredTime,
             nextCheck: "Will check again on next cron run"
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -147,7 +168,7 @@ const handler = async (req: Request): Promise<Response> => {
       
       // Use the period determined by schedule
       reportPeriod = period;
-      console.log(`Scheduled report: Sending ${frequency} report for period: ${reportPeriod}`);
+      console.log(`Scheduled report: ${reason} - Sending ${frequency} report for period: ${reportPeriod}`);
     }
 
     // Calculate date range based on period
