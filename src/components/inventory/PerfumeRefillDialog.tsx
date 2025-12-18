@@ -133,15 +133,15 @@ export function PerfumeRefillDialog({
     enabled: !!selectedDepartmentId,
   });
 
-  // Get pricing config from department settings or use defaults
-  const { data: departmentSettings } = useQuery({
-    queryKey: ["department-settings", selectedDepartmentId],
+  // Get pricing config from perfume_pricing_config table or use defaults
+  const { data: pricingConfigData } = useQuery({
+    queryKey: ["perfume-pricing-config", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return null;
       
       const { data, error } = await supabase
-        .from("settings")
-        .select("settings_json")
+        .from("perfume_pricing_config")
+        .select("*")
         .eq("department_id", selectedDepartmentId)
         .maybeSingle();
       
@@ -151,7 +151,22 @@ export function PerfumeRefillDialog({
     enabled: !!selectedDepartmentId,
   });
 
-  const pricingConfig = (departmentSettings?.settings_json as any)?.perfume_pricing || DEFAULT_PRICING_CONFIG;
+  const retailPricing = pricingConfigData?.retail_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
+  const wholesalePricing = pricingConfigData?.wholesale_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
+  const bottleCostConfig = pricingConfigData?.bottle_cost_config as { ranges?: { min: number; max: number; cost: number }[] } | null;
+
+  const pricingConfig = {
+    ...DEFAULT_PRICING_CONFIG,
+    ...(retailPricing?.sizes && retailPricing.sizes.length > 0 && {
+      retail_bottle_pricing: retailPricing
+    }),
+    ...(wholesalePricing?.sizes && wholesalePricing.sizes.length > 0 && {
+      wholesale_bottle_pricing: wholesalePricing
+    }),
+    ...(bottleCostConfig?.ranges && bottleCostConfig.ranges.length > 0 && {
+      bottle_cost_config: bottleCostConfig
+    }),
+  };
 
   // Fetch shop products
   const { data: shopProducts = [] } = useQuery({
