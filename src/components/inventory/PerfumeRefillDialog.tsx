@@ -557,12 +557,32 @@ export function PerfumeRefillDialog({
                     ))}
                   </div>
                   {selectedBottleSize && parseInt(selectedBottleSize) > 0 && (
-                    <div className="p-2 bg-primary/10 rounded-md text-sm">
-                      <span className="font-medium">{selectedBottleSize}ml</span> × UGX {(pricingConfig?.wholesale_price_per_ml || 400).toLocaleString()}/ml = 
-                      <span className="font-bold text-primary ml-1">
-                        UGX {(parseInt(selectedBottleSize) * (pricingConfig?.wholesale_price_per_ml || 400)).toLocaleString()}
-                      </span>
-                    </div>
+                    <>
+                      <div className="p-2 bg-primary/10 rounded-md text-sm">
+                        <span className="font-medium">{selectedBottleSize}ml</span> × UGX {(pricingConfig?.wholesale_price_per_ml || 400).toLocaleString()}/ml = 
+                        <span className="font-bold text-primary ml-1">
+                          UGX {(parseInt(selectedBottleSize) * (pricingConfig?.wholesale_price_per_ml || 400)).toLocaleString()}
+                        </span>
+                      </div>
+                      {/* Stock validation warning for wholesale */}
+                      {currentScent && (() => {
+                        const scentInfo = getScentInfo(currentScent);
+                        const requestedMl = parseInt(selectedBottleSize);
+                        const availableMl = scentInfo?.stock_ml || 0;
+                        if (requestedMl > availableMl) {
+                          return (
+                            <Alert variant="destructive" className="mt-2">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertDescription>
+                                <strong>Insufficient stock!</strong> {currentScent} only has {availableMl}ml available. 
+                                Please reduce quantity to {availableMl}ml or less.
+                              </AlertDescription>
+                            </Alert>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </>
                   )}
                 </div>
               )}
