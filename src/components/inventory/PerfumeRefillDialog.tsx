@@ -532,12 +532,10 @@ export function PerfumeRefillDialog({
                     <SelectValue placeholder="Select bottle size" />
                   </SelectTrigger>
                   <SelectContent>
-                    {BOTTLE_SIZES.map((size) => {
-                      const pricing = pricingConfig?.retail_bottle_pricing?.sizes?.find((p: any) => p.ml === size);
-                      const price = pricing?.price || size * (pricingConfig?.retail_price_per_ml || 800);
+                    {(pricingConfig?.retail_bottle_pricing?.sizes || DEFAULT_PRICING_CONFIG.retail_bottle_pricing.sizes).map((sizeConfig: { ml: number; price: number }) => {
                       return (
-                        <SelectItem key={size} value={size.toString()}>
-                          {size}ml - UGX {price.toLocaleString()}
+                        <SelectItem key={sizeConfig.ml} value={sizeConfig.ml.toString()}>
+                          {sizeConfig.ml}ml - UGX {sizeConfig.price.toLocaleString()}
                         </SelectItem>
                       );
                     })}
