@@ -499,27 +499,64 @@ export function PerfumeRefillDialog({
               </Select>
             </div>
 
-            {/* Bottle Size Selection */}
+            {/* Bottle Size Selection - Dropdown for Retail, Input for Wholesale */}
             <div className="space-y-2">
-              <Label>Bottle Size</Label>
-              <Select value={selectedBottleSize} onValueChange={setSelectedBottleSize}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select bottle size" />
-                </SelectTrigger>
-                <SelectContent>
-                  {BOTTLE_SIZES.map((size) => {
-                    const pricing = pricingConfig?.retail_bottle_pricing?.sizes?.find((p: any) => p.ml === size);
-                    const price = customerType === "retail" 
-                      ? (pricing?.price || size * (pricingConfig?.retail_price_per_ml || 800))
-                      : size * (pricingConfig?.wholesale_price_per_ml || 400);
-                    return (
-                      <SelectItem key={size} value={size.toString()}>
-                        {size}ml - UGX {price.toLocaleString()}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              <Label>{customerType === "wholesale" ? "ML Quantity" : "Bottle Size"}</Label>
+              {customerType === "retail" ? (
+                <Select value={selectedBottleSize} onValueChange={setSelectedBottleSize}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select bottle size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BOTTLE_SIZES.map((size) => {
+                      const pricing = pricingConfig?.retail_bottle_pricing?.sizes?.find((p: any) => p.ml === size);
+                      const price = pricing?.price || size * (pricingConfig?.retail_price_per_ml || 800);
+                      return (
+                        <SelectItem key={size} value={size.toString()}>
+                          {size}ml - UGX {price.toLocaleString()}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      value={selectedBottleSize || ""}
+                      onChange={(e) => setSelectedBottleSize(e.target.value)}
+                      placeholder="Enter ML quantity"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">ml</span>
+                  </div>
+                  {/* Quick ML Presets for Wholesale */}
+                  <div className="flex flex-wrap gap-1">
+                    {[50, 100, 200, 250, 300, 500, 750, 1000].map((ml) => (
+                      <Button
+                        key={ml}
+                        type="button"
+                        variant={selectedBottleSize === ml.toString() ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => setSelectedBottleSize(ml.toString())}
+                      >
+                        {ml}ml
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedBottleSize && parseInt(selectedBottleSize) > 0 && (
+                    <div className="p-2 bg-primary/10 rounded-md text-sm">
+                      <span className="font-medium">{selectedBottleSize}ml</span> × UGX {(pricingConfig?.wholesale_price_per_ml || 400).toLocaleString()}/ml = 
+                      <span className="font-bold text-primary ml-1">
+                        UGX {(parseInt(selectedBottleSize) * (pricingConfig?.wholesale_price_per_ml || 400)).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Scent Selection */}
