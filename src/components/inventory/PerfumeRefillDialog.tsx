@@ -305,12 +305,12 @@ export function PerfumeRefillDialog({
 
   const handleAddToCart = async () => {
     if (selectedScents.length === 0) {
-      toast.error("Please add at least one scent");
+      toast.error(customerType === "wholesale" ? "Please select a scent" : "Please add at least one scent");
       return;
     }
 
     if (!selectedBottleSize) {
-      toast.error("Please select a bottle size");
+      toast.error(customerType === "wholesale" ? "Please enter the ML quantity" : "Please select a bottle size");
       return;
     }
 
@@ -488,7 +488,16 @@ export function PerfumeRefillDialog({
             {/* Customer Type Selection */}
             <div className="space-y-2">
               <Label>Customer Type</Label>
-              <Select value={customerType} onValueChange={(v) => setCustomerType(v as "retail" | "wholesale")}>
+              <Select 
+                value={customerType} 
+                onValueChange={(v) => {
+                  setCustomerType(v as "retail" | "wholesale");
+                  // Reset selections when switching customer type
+                  setSelectedScents([]);
+                  setCurrentScent("");
+                  setSelectedBottleSize("");
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -559,12 +568,14 @@ export function PerfumeRefillDialog({
               )}
             </div>
 
-            {/* Scent Selection */}
+            {/* Scent Selection - Different UI for Retail vs Wholesale */}
             <Card className="bg-muted/30">
               <CardContent className="pt-4 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-primary" />
-                  <Label className="font-medium">Select Scents</Label>
+                  <Label className="font-medium">
+                    {customerType === "wholesale" ? "Select Scent" : "Select Scents"}
+                  </Label>
                 </div>
                 
                 {allScents.length === 0 && (
@@ -576,89 +587,171 @@ export function PerfumeRefillDialog({
                   </Alert>
                 )}
                 
-                <div className="flex gap-2">
-                  <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="flex-1 justify-start">
-                        {currentScent || "Select scent..."}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search scents..." />
-                        <CommandList>
-                          <CommandEmpty>No scent found.</CommandEmpty>
-                          <CommandGroup>
-                            {allScents.map((scent) => {
-                              const scentInfo = getScentInfo(scent);
-                              const hasStock = scentInfo && (scentInfo.stock_ml || 0) > 0;
-                              const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
-                              const isFrequent = isFrequentScent(scent);
-                              
-                              return (
-                                <CommandItem
-                                  key={scent}
-                                  value={scent}
-                                  onSelect={() => {
-                                    setCurrentScent(scent);
-                                    setPopoverOpen(false);
-                                  }}
-                                  className="flex justify-between"
-                                >
-                                  <span className="flex items-center gap-1">
-                                    {scent}
-                                    {isFrequent && <TrendingUp className="w-3 h-3 text-primary" />}
-                                  </span>
-                                  {scentInfo && (
+                {customerType === "wholesale" ? (
+                  /* Wholesale: Single scent selector */
+                  <div className="space-y-3">
+                    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          {currentScent ? (
+                            <span className="flex items-center justify-between w-full">
+                              <span>{currentScent}</span>
+                              {getScentInfo(currentScent) && (
+                                <Badge variant="secondary" className="ml-2">
+                                  {getScentInfo(currentScent)?.stock_ml || 0}ml available
+                                </Badge>
+                              )}
+                            </span>
+                          ) : (
+                            "Select scent..."
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[350px] p-0">
+                        <Command>
+                          <CommandInput placeholder="Search scents..." />
+                          <CommandList>
+                            <CommandEmpty>No scent found.</CommandEmpty>
+                            <CommandGroup>
+                              {allScents.map((scent) => {
+                                const scentInfo = getScentInfo(scent);
+                                const hasStock = scentInfo && (scentInfo.stock_ml || 0) > 0;
+                                const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                                const isFrequent = isFrequentScent(scent);
+                                
+                                return (
+                                  <CommandItem
+                                    key={scent}
+                                    value={scent}
+                                    onSelect={() => {
+                                      setCurrentScent(scent);
+                                      // For wholesale, also set as selected scent immediately
+                                      const info = getScentInfo(scent);
+                                      setSelectedScents([{
+                                        scent: scent,
+                                        scentId: info?.id || null,
+                                        ml: 0,
+                                      }]);
+                                      setPopoverOpen(false);
+                                    }}
+                                    className="flex justify-between"
+                                  >
+                                    <span className="flex items-center gap-1">
+                                      {scent}
+                                      {isFrequent && <TrendingUp className="w-3 h-3 text-primary" />}
+                                    </span>
                                     <Badge 
                                       variant={isLowStock ? "destructive" : hasStock ? "secondary" : "outline"} 
                                       className="ml-2 text-xs"
                                     >
-                                      {scentInfo.stock_ml || 0}ml
+                                      {scentInfo?.stock_ml || 0}ml
                                     </Badge>
-                                  )}
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <Button onClick={addScent} variant="secondary">
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </Button>
-                </div>
-
-                {/* Selected Scents */}
-                {selectedScents.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm">Selected Scents ({selectedScents.length})</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedScents.map((s) => {
-                        const scentInfo = getScentInfo(s.scent);
-                        const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
-                        return (
-                          <Badge 
-                            key={s.scent} 
-                            variant="secondary"
-                            className="flex items-center gap-1 py-1"
-                          >
-                            {s.scent}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-4 w-4 p-0 ml-1"
-                              onClick={() => removeScent(s.scent)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </Badge>
-                        );
-                      })}
-                    </div>
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    
+                    {currentScent && (
+                      <div className="p-3 bg-primary/5 rounded-lg border">
+                        <p className="text-sm font-medium">Selected: {currentScent}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Stock available: {getScentInfo(currentScent)?.stock_ml || 0}ml
+                        </p>
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  /* Retail: Multi-scent mixing interface */
+                  <>
+                    <div className="flex gap-2">
+                      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="flex-1 justify-start">
+                            {currentScent || "Select scent..."}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0">
+                          <Command>
+                            <CommandInput placeholder="Search scents..." />
+                            <CommandList>
+                              <CommandEmpty>No scent found.</CommandEmpty>
+                              <CommandGroup>
+                                {allScents.map((scent) => {
+                                  const scentInfo = getScentInfo(scent);
+                                  const hasStock = scentInfo && (scentInfo.stock_ml || 0) > 0;
+                                  const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                                  const isFrequent = isFrequentScent(scent);
+                                  
+                                  return (
+                                    <CommandItem
+                                      key={scent}
+                                      value={scent}
+                                      onSelect={() => {
+                                        setCurrentScent(scent);
+                                        setPopoverOpen(false);
+                                      }}
+                                      className="flex justify-between"
+                                    >
+                                      <span className="flex items-center gap-1">
+                                        {scent}
+                                        {isFrequent && <TrendingUp className="w-3 h-3 text-primary" />}
+                                      </span>
+                                      {scentInfo && (
+                                        <Badge 
+                                          variant={isLowStock ? "destructive" : hasStock ? "secondary" : "outline"} 
+                                          className="ml-2 text-xs"
+                                        >
+                                          {scentInfo.stock_ml || 0}ml
+                                        </Badge>
+                                      )}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <Button onClick={addScent} variant="secondary">
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+
+                    {/* Selected Scents */}
+                    {selectedScents.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">Selected Scents ({selectedScents.length})</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedScents.map((s) => {
+                            const scentInfo = getScentInfo(s.scent);
+                            const isLowStock = scentInfo && (scentInfo.stock_ml || 0) < LOW_STOCK_THRESHOLD;
+                            return (
+                              <Badge 
+                                key={s.scent} 
+                                variant="secondary"
+                                className="flex items-center gap-1 py-1"
+                              >
+                                {s.scent}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-4 w-4 p-0 ml-1"
+                                  onClick={() => removeScent(s.scent)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
