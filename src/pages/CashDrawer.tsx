@@ -24,7 +24,7 @@ const CURRENCIES = [
 ];
 
 const CashDrawer = () => {
-  const { selectedDepartment } = useDepartment();
+  const { selectedDepartmentId } = useDepartment();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [openFloat, setOpenFloat] = useState("");
@@ -34,36 +34,36 @@ const CashDrawer = () => {
 
   // Fetch current open shift
   const { data: currentShift, isLoading: shiftLoading } = useQuery({
-    queryKey: ["current-shift", selectedDepartment],
+    queryKey: ["current-shift", selectedDepartmentId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cash_drawer_shifts")
         .select("*")
-        .eq("department_id", selectedDepartment)
+        .eq("department_id", selectedDepartmentId)
         .eq("status", "open")
         .maybeSingle();
 
       if (error) throw error;
       return data;
     },
-    enabled: !!selectedDepartment,
+    enabled: !!selectedDepartmentId,
   });
 
   // Fetch shift history
   const { data: shiftHistory } = useQuery({
-    queryKey: ["shift-history", selectedDepartment],
+    queryKey: ["shift-history", selectedDepartmentId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cash_drawer_shifts")
         .select("*")
-        .eq("department_id", selectedDepartment)
+        .eq("department_id", selectedDepartmentId)
         .order("created_at", { ascending: false })
         .limit(10);
 
       if (error) throw error;
       return data;
     },
-    enabled: !!selectedDepartment,
+    enabled: !!selectedDepartmentId,
   });
 
   // Open shift mutation
@@ -72,7 +72,7 @@ const CashDrawer = () => {
       const { data, error } = await supabase
         .from("cash_drawer_shifts")
         .insert({
-          department_id: selectedDepartment,
+          department_id: selectedDepartmentId,
           opened_by: user?.id,
           opening_float: parseFloat(openFloat) || 0,
           notes: openNotes || null,
@@ -99,14 +99,14 @@ const CashDrawer = () => {
 
   // Calculate expected cash from today's sales
   const { data: todaysCashSales } = useQuery({
-    queryKey: ["todays-cash-sales", selectedDepartment, currentShift?.id],
+    queryKey: ["todays-cash-sales", selectedDepartmentId, currentShift?.id],
     queryFn: async () => {
       if (!currentShift) return 0;
       
       const { data, error } = await supabase
         .from("sales")
         .select("total")
-        .eq("department_id", selectedDepartment)
+        .eq("department_id", selectedDepartmentId)
         .eq("payment_method", "cash")
         .eq("status", "completed")
         .gte("created_at", currentShift.opened_at);
@@ -114,12 +114,12 @@ const CashDrawer = () => {
       if (error) throw error;
       return data?.reduce((sum, sale) => sum + (sale.total || 0), 0) || 0;
     },
-    enabled: !!currentShift && !!selectedDepartment,
+    enabled: !!currentShift && !!selectedDepartmentId,
   });
 
   const expectedCash = (currentShift?.opening_float || 0) + (todaysCashSales || 0);
 
-  if (!selectedDepartment) {
+  if (!selectedDepartmentId) {
     return (
       <div className="container mx-auto p-6">
         <Card>
