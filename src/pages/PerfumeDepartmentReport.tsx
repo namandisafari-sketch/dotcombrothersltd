@@ -174,10 +174,10 @@ const PerfumeDepartmentReport = () => {
       color: "text-blue-500"
     },
     {
-      title: "Net Revenue",
-      value: `UGX ${(salesData?.netRevenue || 0).toLocaleString()}`,
+      title: "Gross Revenue",
+      value: `UGX ${(salesData?.totalRevenue || 0).toLocaleString()}`,
       icon: DollarSign,
-      description: "After bottle costs",
+      description: "Total sales amount",
       color: "text-green-500"
     },
     {
@@ -188,11 +188,18 @@ const PerfumeDepartmentReport = () => {
       color: "text-purple-500"
     },
     {
-      title: "Bottle Costs",
+      title: "Bottle Costs (Packaging)",
       value: `UGX ${(salesData?.totalBottleCosts || 0).toLocaleString()}`,
       icon: Package,
-      description: "Total packaging cost",
+      description: `Cost of ${salesData?.totalTransactions || 0} bottles used`,
       color: "text-orange-500"
+    },
+    {
+      title: "Net Revenue",
+      value: `UGX ${(salesData?.netRevenue || 0).toLocaleString()}`,
+      icon: TrendingUp,
+      description: "Gross Revenue - Bottle Costs",
+      color: "text-emerald-500"
     }
   ];
 
@@ -233,7 +240,7 @@ const PerfumeDepartmentReport = () => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {kpiCards.map((card, index) => (
             <Card key={index}>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
