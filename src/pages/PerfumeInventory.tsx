@@ -67,12 +67,11 @@ export default function PerfumeInventory() {
   // Bottle cost configuration state
   const [bottleCostDialogOpen, setBottleCostDialogOpen] = useState(false);
   const [bottleCostRanges, setBottleCostRanges] = useState([
-    { min: 0, max: 10, cost: 500 },
-    { min: 11, max: 30, cost: 1000 },
-    { min: 31, max: 50, cost: 1500 },
-    { min: 51, max: 100, cost: 2000 },
-    { min: 101, max: 200, cost: 2500 },
-    { min: 201, max: 999999, cost: 3000 },
+    { size: 10, cost: 500 },
+    { size: 30, cost: 1000 },
+    { size: 50, cost: 1500 },
+    { size: 100, cost: 2000 },
+    { size: 200, cost: 2500 },
   ]);
   
   // Oil perfume pricing state
@@ -1124,37 +1123,24 @@ export default function PerfumeInventory() {
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Set the cost of bottles based on size ranges. These costs will be deducted from revenue.
+                Set the cost of bottles by size. At POS, the system will separate ml cost from bottle cost to calculate profit.
               </p>
               <div className="space-y-3">
                 {bottleCostRanges.map((range, index) => (
                   <Card key={index}>
                     <CardContent className="p-4">
-                      <div className="grid grid-cols-4 gap-4 items-center">
+                      <div className="grid grid-cols-3 gap-4 items-center">
                         <div>
-                          <Label className="text-sm text-muted-foreground">Min Size (ml)</Label>
+                          <Label className="text-sm text-muted-foreground">Bottle Size (ml)</Label>
                           <Input
                             type="number"
-                            value={range.min}
+                            value={range.size}
                             onChange={(e) => {
                               const updated = [...bottleCostRanges];
-                              updated[index].min = Number(e.target.value);
+                              updated[index].size = Number(e.target.value);
                               setBottleCostRanges(updated);
                             }}
-                            placeholder="Min ml"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Max Size (ml)</Label>
-                          <Input
-                            type="number"
-                            value={range.max}
-                            onChange={(e) => {
-                              const updated = [...bottleCostRanges];
-                              updated[index].max = Number(e.target.value);
-                              setBottleCostRanges(updated);
-                            }}
-                            placeholder="Max ml"
+                            placeholder="Size in ml"
                           />
                         </div>
                         <div>
@@ -1190,11 +1176,11 @@ export default function PerfumeInventory() {
                 ))}
                 <Button
                   variant="outline"
-                  onClick={() => setBottleCostRanges([...bottleCostRanges, { min: 0, max: 0, cost: 0 }])}
+                  onClick={() => setBottleCostRanges([...bottleCostRanges, { size: 0, cost: 0 }])}
                   className="w-full"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Cost Range
+                  Add Bottle Size
                 </Button>
               </div>
             </div>

@@ -36,12 +36,11 @@ const DEFAULT_PRICING_CONFIG = {
   wholesale_price_per_ml: 400,
   bottle_cost_config: {
     ranges: [
-      { min: 0, max: 10, cost: 300 },
-      { min: 11, max: 30, cost: 500 },
-      { min: 31, max: 50, cost: 1000 },
-      { min: 51, max: 100, cost: 1500 },
-      { min: 101, max: 200, cost: 2000 },
-      { min: 201, max: 999999, cost: 3000 }
+      { size: 10, cost: 300 },
+      { size: 30, cost: 500 },
+      { size: 50, cost: 1000 },
+      { size: 100, cost: 1500 },
+      { size: 200, cost: 2000 }
     ]
   },
   retail_bottle_pricing: {
@@ -153,7 +152,7 @@ export function PerfumeRefillDialog({
 
   const retailPricing = pricingConfigData?.retail_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
   const wholesalePricing = pricingConfigData?.wholesale_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
-  const bottleCostConfig = pricingConfigData?.bottle_cost_config as { ranges?: { min: number; max: number; cost: number }[] } | null;
+  const bottleCostConfig = pricingConfigData?.bottle_cost_config as { ranges?: { size: number; cost: number }[] } | null;
 
   const pricingConfig = {
     ...DEFAULT_PRICING_CONFIG,
@@ -275,8 +274,16 @@ export function PerfumeRefillDialog({
     if (!config?.ranges) return 1000;
     
     const ranges = config.ranges;
-    const range = ranges.find((r: any) => totalMl >= r.min && totalMl <= r.max);
-    return range?.cost || 1000;
+    // Find exact match or closest size
+    const exactMatch = ranges.find((r: any) => r.size === totalMl);
+    if (exactMatch) return exactMatch.cost;
+    
+    // Find closest size if no exact match
+    const sortedRanges = [...ranges].sort((a: any, b: any) => a.size - b.size);
+    const closest = sortedRanges.reduce((prev: any, curr: any) => 
+      Math.abs(curr.size - totalMl) < Math.abs(prev.size - totalMl) ? curr : prev
+    );
+    return closest?.cost || 1000;
   };
 
   const calculatePrice = () => {
