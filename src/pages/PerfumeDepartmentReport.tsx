@@ -62,11 +62,11 @@ const PerfumeDepartmentReport = () => {
       if (deptId) usageQuery = usageQuery.eq("department_id", deptId);
       const { data: internalUsage } = await usageQuery;
 
-      // Fetch the perfume product to get cost_per_ml
-      let productQuery = supabase.from("products").select("cost_per_ml").eq("tracking_type", "ml");
+      // Fetch the perfume product to get cost_price (cost per ml)
+      let productQuery = supabase.from("products").select("cost_price").eq("tracking_type", "ml");
       if (deptId) productQuery = productQuery.eq("department_id", deptId);
       const { data: perfumeProducts } = await productQuery;
-      const costPerMl = perfumeProducts?.[0]?.cost_per_ml || 0;
+      const costPerMl = perfumeProducts?.[0]?.cost_price || 0;
 
       // Helper function to extract ML from item name if ml_amount is not set
       const extractMlFromItem = (item: any): number => {
