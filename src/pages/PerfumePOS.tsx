@@ -579,6 +579,8 @@ const PerfumePOS = () => {
         customer_type: item.customerType || null,
         scent_mixture: item.scentMixture || null,
         bottle_cost: item.bottleCost || null,
+        ml_amount: item.totalMl || null,
+        price_per_ml: item.pricePerMl || null,
       }));
 
       const { error: itemsError } = await supabase
