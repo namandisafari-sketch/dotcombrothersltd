@@ -34,24 +34,15 @@ interface SelectedScent {
 const DEFAULT_PRICING_CONFIG = {
   retail_price_per_ml: 800,
   wholesale_price_per_ml: 400,
-  bottle_cost_config: {
-    ranges: [
-      { size: 10, cost: 300 },
-      { size: 30, cost: 500 },
-      { size: 50, cost: 1000 },
-      { size: 100, cost: 1500 },
-      { size: 200, cost: 2000 }
-    ]
-  },
   retail_bottle_pricing: {
     sizes: [
-      { ml: 10, price: 8000 },
-      { ml: 15, price: 12000 },
-      { ml: 20, price: 16000 },
-      { ml: 25, price: 20000 },
-      { ml: 30, price: 24000 },
-      { ml: 50, price: 40000 },
-      { ml: 100, price: 80000 }
+      { ml: 10, price: 8000, cost: 500 },
+      { ml: 15, price: 12000, cost: 700 },
+      { ml: 20, price: 16000, cost: 800 },
+      { ml: 25, price: 20000, cost: 900 },
+      { ml: 30, price: 24000, cost: 1000 },
+      { ml: 50, price: 40000, cost: 1500 },
+      { ml: 100, price: 80000, cost: 2000 }
     ]
   }
 };
@@ -150,9 +141,8 @@ export function PerfumeRefillDialog({
     enabled: !!selectedDepartmentId,
   });
 
-  const retailPricing = pricingConfigData?.retail_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
+  const retailPricing = pricingConfigData?.retail_bottle_pricing as { sizes?: { ml: number; price: number; cost?: number }[] } | null;
   const wholesalePricing = pricingConfigData?.wholesale_bottle_pricing as { sizes?: { ml: number; price: number }[] } | null;
-  const bottleCostConfig = pricingConfigData?.bottle_cost_config as { ranges?: { size: number; cost: number }[] } | null;
 
   const pricingConfig = {
     ...DEFAULT_PRICING_CONFIG,
@@ -161,9 +151,6 @@ export function PerfumeRefillDialog({
     }),
     ...(wholesalePricing?.sizes && wholesalePricing.sizes.length > 0 && {
       wholesale_bottle_pricing: wholesalePricing
-    }),
-    ...(bottleCostConfig?.ranges && bottleCostConfig.ranges.length > 0 && {
-      bottle_cost_config: bottleCostConfig
     }),
   };
 
@@ -270,18 +257,18 @@ export function PerfumeRefillDialog({
   };
 
   const getBottleCostBySize = (totalMl: number) => {
-    const config = pricingConfig?.bottle_cost_config as any;
-    if (!config?.ranges) return 1000;
+    // Get bottle cost from retail_bottle_pricing.sizes
+    const sizes = pricingConfig?.retail_bottle_pricing?.sizes as { ml: number; price: number; cost?: number }[];
+    if (!sizes || sizes.length === 0) return 1000;
     
-    const ranges = config.ranges;
-    // Find exact match or closest size
-    const exactMatch = ranges.find((r: any) => r.size === totalMl);
-    if (exactMatch) return exactMatch.cost;
+    // Find exact match
+    const exactMatch = sizes.find((s) => s.ml === totalMl);
+    if (exactMatch && exactMatch.cost) return exactMatch.cost;
     
-    // Find closest size if no exact match
-    const sortedRanges = [...ranges].sort((a: any, b: any) => a.size - b.size);
-    const closest = sortedRanges.reduce((prev: any, curr: any) => 
-      Math.abs(curr.size - totalMl) < Math.abs(prev.size - totalMl) ? curr : prev
+    // For wholesale customers or custom ML amounts, find the closest bottle size
+    const sortedSizes = [...sizes].sort((a, b) => a.ml - b.ml);
+    const closest = sortedSizes.reduce((prev, curr) => 
+      Math.abs(curr.ml - totalMl) < Math.abs(prev.ml - totalMl) ? curr : prev
     );
     return closest?.cost || 1000;
   };

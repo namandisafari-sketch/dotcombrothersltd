@@ -52,26 +52,16 @@ export default function PerfumeInventory() {
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<PerfumeProduct | null>(null);
   
-  // Bottle size pricing state
+  // Bottle size pricing state (includes cost for each size)
   const [bottleSizePricingDialogOpen, setBottleSizePricingDialogOpen] = useState(false);
   const [bottleSizePricing, setBottleSizePricing] = useState([
-    { ml: 10, price: 8000 },
-    { ml: 15, price: 12000 },
-    { ml: 20, price: 16000 },
-    { ml: 25, price: 20000 },
-    { ml: 30, price: 24000 },
-    { ml: 50, price: 40000 },
-    { ml: 100, price: 80000 },
-  ]);
-
-  // Bottle cost configuration state
-  const [bottleCostDialogOpen, setBottleCostDialogOpen] = useState(false);
-  const [bottleCostRanges, setBottleCostRanges] = useState([
-    { size: 10, cost: 500 },
-    { size: 30, cost: 1000 },
-    { size: 50, cost: 1500 },
-    { size: 100, cost: 2000 },
-    { size: 200, cost: 2500 },
+    { ml: 10, price: 8000, cost: 500 },
+    { ml: 15, price: 12000, cost: 700 },
+    { ml: 20, price: 16000, cost: 800 },
+    { ml: 25, price: 20000, cost: 900 },
+    { ml: 30, price: 24000, cost: 1000 },
+    { ml: 50, price: 40000, cost: 1500 },
+    { ml: 100, price: 80000, cost: 2000 },
   ]);
   
   // Oil perfume pricing state
@@ -190,13 +180,13 @@ export default function PerfumeInventory() {
       if (data?.retail_bottle_pricing) {
         const config = data.retail_bottle_pricing as any;
         if (config.sizes && config.sizes.length > 0) {
-          setBottleSizePricing(config.sizes);
-        }
-      }
-      if (data?.bottle_cost_config) {
-        const costConfig = data.bottle_cost_config as any;
-        if (costConfig.ranges && costConfig.ranges.length > 0) {
-          setBottleCostRanges(costConfig.ranges);
+          // Ensure each size has a cost field (migrate old data)
+          const sizesWithCost = config.sizes.map((s: any) => ({
+            ml: s.ml,
+            price: s.price,
+            cost: s.cost || 0, // Default to 0 if cost not set
+          }));
+          setBottleSizePricing(sizesWithCost);
         }
       }
       return data;
@@ -323,25 +313,6 @@ export default function PerfumeInventory() {
     },
   });
 
-  // Bottle cost configuration mutation
-  const updateBottleCostMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedDepartmentId) throw new Error("No department selected");
-      
-      const { error } = await supabase
-        .from("perfume_pricing_config")
-        .upsert({
-          department_id: selectedDepartmentId,
-          bottle_cost_config: { ranges: bottleCostRanges },
-        }, { onConflict: 'department_id' });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Bottle cost configuration updated successfully");
-      refetchBottlePricingConfig();
-      setBottleCostDialogOpen(false);
-    },
-  });
 
   // Shop product mutations
   const saveProductMutation = useMutation({
@@ -682,15 +653,6 @@ export default function PerfumeInventory() {
                       >
                         <Package className="w-5 h-5 mr-2" />
                         Bottle Sizes & Prices
-                      </Button>
-                      <Button 
-                        onClick={() => setBottleCostDialogOpen(true)}
-                        className="flex-1"
-                        size="lg"
-                        variant="outline"
-                      >
-                        <Edit className="w-5 h-5 mr-2" />
-                        Bottle Costs
                       </Button>
                     </div>
                   </CardContent>
@@ -1045,13 +1007,13 @@ export default function PerfumeInventory() {
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Set the selling price for each bottle size for retail customers.
+                Set the selling price and cost for each bottle size. The cost is used to calculate profit on sales.
               </p>
               <div className="space-y-3">
                 {bottleSizePricing.map((size, index) => (
                   <Card key={index}>
                     <CardContent className="p-4">
-                      <div className="grid grid-cols-3 gap-4 items-center">
+                      <div className="grid grid-cols-4 gap-4 items-center">
                         <div>
                           <Label className="text-sm text-muted-foreground">Bottle Size (ml)</Label>
                           <Input
@@ -1078,6 +1040,19 @@ export default function PerfumeInventory() {
                             placeholder="Price"
                           />
                         </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Bottle Cost (UGX)</Label>
+                          <Input
+                            type="number"
+                            value={size.cost}
+                            onChange={(e) => {
+                              const updated = [...bottleSizePricing];
+                              updated[index].cost = Number(e.target.value);
+                              setBottleSizePricing(updated);
+                            }}
+                            placeholder="Cost"
+                          />
+                        </div>
                         <div className="flex items-end">
                           <Button
                             variant="ghost"
@@ -1098,7 +1073,7 @@ export default function PerfumeInventory() {
                 ))}
                 <Button
                   variant="outline"
-                  onClick={() => setBottleSizePricing([...bottleSizePricing, { ml: 0, price: 0 }])}
+                  onClick={() => setBottleSizePricing([...bottleSizePricing, { ml: 0, price: 0, cost: 0 }])}
                   className="w-full"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -1115,83 +1090,6 @@ export default function PerfumeInventory() {
           </DialogContent>
         </Dialog>
 
-        {/* Bottle Cost Configuration Dialog */}
-        <Dialog open={bottleCostDialogOpen} onOpenChange={setBottleCostDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Configure Bottle Costs for Retail Sales</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Set the cost of bottles by size. At POS, the system will separate ml cost from bottle cost to calculate profit.
-              </p>
-              <div className="space-y-3">
-                {bottleCostRanges.map((range, index) => (
-                  <Card key={index}>
-                    <CardContent className="p-4">
-                      <div className="grid grid-cols-3 gap-4 items-center">
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Bottle Size (ml)</Label>
-                          <Input
-                            type="number"
-                            value={range.size}
-                            onChange={(e) => {
-                              const updated = [...bottleCostRanges];
-                              updated[index].size = Number(e.target.value);
-                              setBottleCostRanges(updated);
-                            }}
-                            placeholder="Size in ml"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-sm text-muted-foreground">Bottle Cost (UGX)</Label>
-                          <Input
-                            type="number"
-                            value={range.cost}
-                            onChange={(e) => {
-                              const updated = [...bottleCostRanges];
-                              updated[index].cost = Number(e.target.value);
-                              setBottleCostRanges(updated);
-                            }}
-                            placeholder="Cost"
-                          />
-                        </div>
-                        <div className="flex items-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (bottleCostRanges.length > 1) {
-                                setBottleCostRanges(bottleCostRanges.filter((_, i) => i !== index));
-                              }
-                            }}
-                            disabled={bottleCostRanges.length === 1}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Button
-                  variant="outline"
-                  onClick={() => setBottleCostRanges([...bottleCostRanges, { size: 0, cost: 0 }])}
-                  className="w-full"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Bottle Size
-                </Button>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setBottleCostDialogOpen(false)}>Cancel</Button>
-              <Button onClick={() => updateBottleCostMutation.mutate()}>
-                Save Bottle Costs
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
   );
