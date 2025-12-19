@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      cash_drawer_shifts: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          closing_cash: number | null
+          created_at: string
+          department_id: string | null
+          discrepancy: number | null
+          expected_cash: number | null
+          id: string
+          notes: string | null
+          opened_at: string
+          opened_by: string | null
+          opening_float: number
+          status: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closing_cash?: number | null
+          created_at?: string
+          department_id?: string | null
+          discrepancy?: number | null
+          expected_cash?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opened_by?: string | null
+          opening_float?: number
+          status?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          closing_cash?: number | null
+          created_at?: string
+          department_id?: string | null
+          discrepancy?: number | null
+          expected_cash?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opened_by?: string | null
+          opening_float?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_drawer_shifts_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string | null
@@ -42,6 +98,60 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      closing_checklists: {
+        Row: {
+          cash_counted: boolean | null
+          cash_verified: boolean | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          department_id: string | null
+          discrepancy_explained: boolean | null
+          id: string
+          notes: string | null
+          shift_id: string | null
+        }
+        Insert: {
+          cash_counted?: boolean | null
+          cash_verified?: boolean | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          department_id?: string | null
+          discrepancy_explained?: boolean | null
+          id?: string
+          notes?: string | null
+          shift_id?: string | null
+        }
+        Update: {
+          cash_counted?: boolean | null
+          cash_verified?: boolean | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          department_id?: string | null
+          discrepancy_explained?: boolean | null
+          id?: string
+          notes?: string | null
+          shift_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "closing_checklists_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "closing_checklists_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "cash_drawer_shifts"
             referencedColumns: ["id"]
           },
         ]
@@ -141,6 +251,47 @@ export type Database = {
             columns: ["to_department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      currency_cash_counts: {
+        Row: {
+          amount: number
+          amount_in_base: number
+          count_type: string
+          created_at: string
+          currency: string
+          exchange_rate: number
+          id: string
+          shift_id: string | null
+        }
+        Insert: {
+          amount?: number
+          amount_in_base?: number
+          count_type?: string
+          created_at?: string
+          currency?: string
+          exchange_rate?: number
+          id?: string
+          shift_id?: string | null
+        }
+        Update: {
+          amount?: number
+          amount_in_base?: number
+          count_type?: string
+          created_at?: string
+          currency?: string
+          exchange_rate?: number
+          id?: string
+          shift_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "currency_cash_counts_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "cash_drawer_shifts"
             referencedColumns: ["id"]
           },
         ]

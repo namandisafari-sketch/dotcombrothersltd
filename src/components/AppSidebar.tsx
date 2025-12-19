@@ -31,6 +31,7 @@ import {
   Upload,
   BookOpen,
   Building,
+  Banknote,
 } from "lucide-react";
 import {
   Sidebar,
@@ -147,6 +148,7 @@ export function AppSidebar() {
     { path: "/suspended-revenue", icon: PauseCircle, label: "Suspended Revenue", departmentTypes: ["mobile_money"] },
     { path: "/expenses", icon: DollarSign, label: "Expenses" },
     { path: "/reconcile", icon: TrendingUp, label: "Reconciliation" },
+    { path: "/cash-drawer", icon: Banknote, label: "Cash Drawer" },
   ];
 
   const perfumeNavItems: NavItem[] = [
