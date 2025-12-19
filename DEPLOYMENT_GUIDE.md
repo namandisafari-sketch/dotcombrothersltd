@@ -417,9 +417,44 @@ VALUES ('new-user-uuid', 'cashier', 'department-uuid', ARRAY['dashboard', 'sales
 
 ## Troubleshooting
 
-### "Unexpected token '<'" Error
-- **Cause**: API returning HTML instead of JSON
-- **Fix**: Ensure the Supabase URL is correct and accessible
+### "Unexpected token '<'" Error During Sign-In
+
+This error means the server is returning HTML (like an error page) instead of JSON.
+
+**Common Causes & Fixes:**
+
+1. **Supabase URL is incorrect or unreachable**
+   ```bash
+   # Test if Supabase is accessible
+   curl http://172.234.31.22:8000/auth/v1/health
+   # Should return JSON, not HTML
+   ```
+
+2. **Environment variables not set during build**
+   ```bash
+   # When building, ensure these are set:
+   export VITE_SELF_HOSTED_SUPABASE_URL=http://172.234.31.22:8000
+   export VITE_SELF_HOSTED_SUPABASE_ANON_KEY=your-anon-key
+   npm run build
+   ```
+
+3. **Kong/GoTrue not properly configured**
+   - Access Supabase Studio → Auth → Settings
+   - Ensure Site URL is set to your deployment domain
+   - Restart the auth service: `docker restart supabase-auth`
+
+4. **Mixed client usage (FIXED in latest update)**
+   - All auth-related code now uses the unified Supabase client
+   - Ensure you have the latest code from the repository
+
+5. **Test authentication endpoint directly:**
+   ```bash
+   curl -X POST 'http://172.234.31.22:8000/auth/v1/token?grant_type=password' \
+     -H "apikey: your-anon-key" \
+     -H "Content-Type: application/json" \
+     -d '{"email":"test@email.com","password":"testpass"}'
+   # Should return JSON (even if error), NOT HTML
+   ```
 
 ### CORS Errors
 - **Cause**: Browser blocking cross-origin requests

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseClient } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 
 interface UserProfile {
@@ -46,12 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchUserDetails = async (authUser: User): Promise<AuthUser> => {
     try {
       const [profileResult, roleResult] = await Promise.all([
-        supabase
+        supabaseClient
           .from('profiles')
           .select('*')
           .eq('id', authUser.id)
           .maybeSingle(),
-        supabase
+        supabaseClient
           .from('user_roles')
           .select('role, department_id, nav_permissions')
           .eq('user_id', authUser.id)
@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Get initial session immediately
     const getInitialSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await supabaseClient.auth.getSession();
         
         if (!mounted) return;
         
@@ -113,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getInitialSession();
 
     // Listen for auth changes AFTER initial check
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       (event, currentSession) => {
         if (!mounted) return;
         
@@ -159,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshUser = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const { data: { user: authUser } } = await supabaseClient.auth.getUser();
     if (authUser) {
       const userDetails = await fetchUserDetails(authUser);
       setUser(userDetails);
@@ -168,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     setIsLoading(true);
-    await supabase.auth.signOut();
+    await supabaseClient.auth.signOut();
     setUser(null);
     setSession(null);
     setIsLoading(false);

@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseClient as supabase } from "@/lib/supabase";
 
 // ============= AUTH =============
 export const authApi = {
