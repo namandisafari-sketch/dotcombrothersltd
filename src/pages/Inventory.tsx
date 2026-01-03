@@ -157,12 +157,14 @@ const Inventory = () => {
   const saveProductMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       // Convert empty strings to null for UUID fields
-      const { reorder_level, current_stock, selling_price, ...rest } = data;
+      const { reorder_level, current_stock, selling_price, tracking_type, ...rest } = data;
       const dataToSave: any = { 
         ...rest,
         stock: current_stock,
         min_stock: reorder_level,
         price: selling_price,
+        // Always use 'quantity' for regular inventory (not 'unit' which is invalid enum value)
+        tracking_type: 'quantity',
       };
       // Ensure UUID fields are null, not empty strings
       dataToSave.category_id = dataToSave.category_id && dataToSave.category_id.length > 0 ? dataToSave.category_id : null;
