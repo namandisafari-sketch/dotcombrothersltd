@@ -3,20 +3,31 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, PackageX } from "lucide-react";
+import { useDepartment } from "@/contexts/DepartmentContext";
 
 export const LowStockAlerts = () => {
+  const { selectedDepartmentId } = useDepartment();
+
   const { data: allProducts } = useQuery({
-    queryKey: ["low-stock-alerts"],
+    queryKey: ["low-stock-alerts", selectedDepartmentId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*")
         .neq("tracking_type", "ml") // Exclude perfume products
         .order("stock");
       
+      // Filter by selected department if one is selected
+      if (selectedDepartmentId) {
+        query = query.eq("department_id", selectedDepartmentId);
+      }
+      
+      const { data, error } = await query;
+      
       if (error) throw error;
       return data || [];
     },
+    enabled: !!selectedDepartmentId,
   });
 
   // Fetch products with variants
