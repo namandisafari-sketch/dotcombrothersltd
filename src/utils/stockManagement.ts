@@ -261,7 +261,7 @@ const reduceProductStock = async (
   trackingType?: string,
   totalMl?: number
 ): Promise<void> => {
-  console.log(`Reducing product stock: productId=${productId}, quantity=${quantity}, trackingType=${trackingType}, totalMl=${totalMl}`);
+  console.log(`🔄 STOCK REDUCTION: productId=${productId}, quantity=${quantity}, trackingType=${trackingType}, totalMl=${totalMl}`);
   
   const { data: product, error: fetchError } = await supabase
     .from("products")
@@ -270,44 +270,53 @@ const reduceProductStock = async (
     .single();
 
   if (fetchError) {
-    console.error("Error fetching product:", fetchError);
+    console.error("❌ Error fetching product for stock reduction:", fetchError);
     throw fetchError;
   }
-  if (!product) throw new Error("Product not found");
+  if (!product) {
+    console.error("❌ Product not found for stock reduction:", productId);
+    throw new Error("Product not found");
+  }
+
+  console.log(`📦 Found product: ${product.name}, current stock=${product.stock}, tracking_type=${product.tracking_type}`);
 
   const isMlTracking = product.tracking_type === "ml" || trackingType === "ml" || trackingType === "milliliter";
   
   if (isMlTracking && totalMl) {
     const currentMl = product.total_ml ?? 0;
     const newMl = Math.max(0, currentMl - totalMl);
-    console.log(`Product ${product.name} (ml): Current=${currentMl}ml, Deducting=${totalMl}ml, New=${newMl}ml`);
+    console.log(`📦 Product ${product.name} (ml): Current=${currentMl}ml, Deducting=${totalMl}ml, New=${newMl}ml`);
     
-    const { error: updateError } = await supabase
+    const { data: updateData, error: updateError } = await supabase
       .from("products")
       .update({ total_ml: newMl })
-      .eq("id", productId);
+      .eq("id", productId)
+      .select();
       
     if (updateError) {
-      console.error("Error updating product ml:", updateError);
+      console.error("❌ Error updating product ml:", updateError);
       throw updateError;
     }
+    console.log(`✅ ML update result:`, updateData);
   } else {
     const currentStock = product.stock ?? 0;
     const newStock = Math.max(0, currentStock - quantity);
-    console.log(`Product ${product.name}: Current stock=${currentStock}, Deducting=${quantity}, New stock=${newStock}`);
+    console.log(`📦 Product ${product.name}: Current stock=${currentStock}, Deducting=${quantity}, New stock=${newStock}`);
     
-    const { error: updateError } = await supabase
+    const { data: updateData, error: updateError } = await supabase
       .from("products")
       .update({ stock: newStock })
-      .eq("id", productId);
+      .eq("id", productId)
+      .select();
       
     if (updateError) {
-      console.error("Error updating product stock:", updateError);
+      console.error("❌ Error updating product stock:", updateError);
       throw updateError;
     }
+    console.log(`✅ Stock update result:`, updateData);
   }
   
-  console.log(`Product stock updated successfully for: ${product.name}`);
+  console.log(`✅ Product stock updated successfully for: ${product.name}`);
 };
 
 /**

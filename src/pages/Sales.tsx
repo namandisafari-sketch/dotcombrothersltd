@@ -697,18 +697,32 @@ const Sales = () => {
         throw new Error("Failed to save sale");
       }
 
-      // Insert sale items
+      // Insert sale items - only include valid database columns
       const itemsWithSaleId = salePayload.items.map((item: any) => ({
-        ...item,
         sale_id: insertedSale.id,
+        product_id: item.product_id || null,
+        service_id: item.service_id || null,
+        variant_id: item.variant_id || null,
         name: item.item_name || 'Unnamed Item',
-        total: item.subtotal || 0,
+        item_name: item.item_name || 'Unnamed Item',
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price || 0,
+        total: item.subtotal || (item.unit_price * item.quantity) || 0,
+        customer_type: item.customer_type || null,
+        scent_mixture: item.scent_mixture || null,
+        bottle_cost: item.bottle_cost || null,
+        ml_amount: item.ml_amount || null,
+        price_per_ml: item.price_per_ml || null,
       }));
+      
+      console.log("Inserting sale items:", itemsWithSaleId);
       
       const { error: itemsError } = await supabase.from("sale_items").insert(itemsWithSaleId);
       if (itemsError) {
         console.error("Failed to insert sale items:", itemsError);
         toast.error("Warning: Sale items failed to save - " + itemsError.message);
+      } else {
+        console.log("Sale items inserted successfully");
       }
 
       // Update mock sale data with actual sale ID and receipt number
