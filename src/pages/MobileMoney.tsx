@@ -442,20 +442,25 @@ const MobileMoney = () => {
           ? cartItem.item.price
           : cartItem.item.selling_price || cartItem.item.price);
         
+        const itemName = cartItem.item.name || 'Unnamed Item';
+        
         return {
           sale_id: sale.id,
-          name: cartItem.item.name,
-          item_name: cartItem.item.name,
+          name: itemName,
+          item_name: itemName,
           service_id: cartItem.itemType === 'service' ? cartItem.item.id : null,
           product_id: cartItem.itemType === 'product' ? cartItem.item.id : null,
           quantity: cartItem.quantity,
-          unit_price: unitPrice,
-          total: unitPrice * cartItem.quantity,
+          unit_price: unitPrice || 0,
+          total: (unitPrice || 0) * cartItem.quantity,
         };
       });
 
       const { error: itemsError } = await supabase.from("sale_items").insert(saleItems);
-      if (itemsError) console.error("Failed to insert sale items:", itemsError);
+      if (itemsError) {
+        console.error("Failed to insert sale items:", itemsError);
+        toast.error("Warning: Sale items failed to save - " + itemsError.message);
+      }
 
       // Prepare stock reduction for products
       const cartForStock: any[] = posCart

@@ -701,11 +701,15 @@ const Sales = () => {
       const itemsWithSaleId = salePayload.items.map((item: any) => ({
         ...item,
         sale_id: insertedSale.id,
-        name: item.item_name,
-        total: item.subtotal,
+        name: item.item_name || 'Unnamed Item',
+        total: item.subtotal || 0,
       }));
       
-      await supabase.from("sale_items").insert(itemsWithSaleId);
+      const { error: itemsError } = await supabase.from("sale_items").insert(itemsWithSaleId);
+      if (itemsError) {
+        console.error("Failed to insert sale items:", itemsError);
+        toast.error("Warning: Sale items failed to save - " + itemsError.message);
+      }
 
       // Update mock sale data with actual sale ID and receipt number
       mockSaleData.id = insertedSale.id;
