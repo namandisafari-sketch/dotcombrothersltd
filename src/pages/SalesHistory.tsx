@@ -137,6 +137,36 @@ const SalesHistory = () => {
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
   const [purgeConfirmText, setPurgeConfirmText] = useState("");
 
+  const voidMutation = useMutation({
+    mutationFn: async ({ saleId, reason }: { saleId: string; reason: string }) => {
+      if (!user) throw new Error("No user found");
+      const { error } = await supabase
+        .from("sales")
+        .update({ status: "voided", void_reason: reason, voided_by: user.id, voided_at: new Date().toISOString() })
+        .eq("id", saleId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Sale voided successfully");
+      queryClient.invalidateQueries({ queryKey: ["sales-history"] });
+      setShowVoidDialog(false);
+      setSaleToVoid(null);
+      setVoidReason("");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to void sale");
+    },
+  });
+
+  const handleVoidClick = (sale: any) => {
+    if (sale.status === "voided") {
+      toast.error("This sale has already been voided");
+      return;
+    }
+    setSaleToVoid(sale);
+    setShowVoidDialog(true);
+  };
+
   const handleConfirmVoid = () => {
     if (!voidReason.trim()) {
       toast.error("Please provide a reason for voiding this sale");
