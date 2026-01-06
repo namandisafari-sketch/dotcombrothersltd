@@ -185,9 +185,11 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
     onSuccess: () => {
       toast.success("Receipt updated successfully!");
       queryClient.invalidateQueries({ queryKey: ["sales"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-history"] });
       queryClient.invalidateQueries({ queryKey: ["perfume-products"] });
       queryClient.invalidateQueries({ queryKey: ["perfume-today-revenue"] });
       queryClient.invalidateQueries({ queryKey: ["perfume-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
       setLoading(false);
       onClose();
     },

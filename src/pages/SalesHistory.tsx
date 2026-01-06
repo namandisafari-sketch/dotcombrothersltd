@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Printer, Calendar, Ban, Smartphone } from "lucide-react";
+import { Search, Eye, Printer, Calendar, Ban, Smartphone, Edit } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,12 +13,12 @@ import { Label } from "@/components/ui/label";
 import { printReceipt, generateReceiptHTML } from "@/utils/receiptPrinter";
 import { PrintPreviewDialog } from "@/components/PrintPreviewDialog";
 import { MobilePrintDialog } from "@/components/MobilePrintDialog";
+import { ReceiptEditDialog } from "@/components/ReceiptEditDialog";
 import { isMobile } from "@/utils/mobilePrinter";
 import { toast } from "sonner";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useAuth } from "@/contexts/AuthContext";
-
 const SalesHistory = () => {
   const queryClient = useQueryClient();
   const { selectedDepartmentId } = useDepartment();
@@ -37,7 +37,8 @@ const SalesHistory = () => {
   const [printPreviewSale, setPrintPreviewSale] = useState<any>(null);
   const [showMobilePrint, setShowMobilePrint] = useState(false);
   const [mobilePrintData, setMobilePrintData] = useState<any>(null);
-
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [saleToEdit, setSaleToEdit] = useState<any>(null);
   const { data: sales, isLoading } = useQuery({
     queryKey: ["sales-history", searchQuery, startDate, endDate, selectedDepartmentId],
     queryFn: async () => {
@@ -152,6 +153,39 @@ const SalesHistory = () => {
   const handleViewDetails = (sale: any) => {
     setSelectedSale(sale);
     setShowDetailsDialog(true);
+  };
+
+  const handleEditSale = (sale: any) => {
+    if (sale.status === "voided") {
+      toast.error("Cannot edit a voided sale");
+      return;
+    }
+    // Format sale data for the edit dialog
+    const editData = {
+      id: sale.id,
+      sale_number: sale.sale_number,
+      receiptNumber: sale.receipt_number,
+      items: sale.sale_items?.map((item: any) => ({
+        id: item.id,
+        name: item.item_name || item.name,
+        item_name: item.item_name || item.name,
+        quantity: item.quantity,
+        price: item.unit_price,
+        unit_price: item.unit_price,
+        subtotal: item.total,
+        total: item.total,
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        service_id: item.service_id,
+        scent_mixture: item.scent_mixture,
+        customer_type: item.customer_type,
+      })) || [],
+      paymentMethod: sale.payment_method,
+      total: sale.total,
+      subtotal: sale.subtotal,
+    };
+    setSaleToEdit(editData);
+    setShowEditDialog(true);
   };
 
   const handleReprintReceipt = async (sale: any, usePreview: boolean = true) => {
@@ -342,6 +376,14 @@ const SalesHistory = () => {
                       </Button>
                       {sale.status !== "voided" && (
                         <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditSale(sale)}
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
@@ -544,6 +586,16 @@ const SalesHistory = () => {
           }}
         />
       )}
+
+      {/* Edit Receipt Dialog */}
+      <ReceiptEditDialog
+        isOpen={showEditDialog}
+        onClose={() => {
+          setShowEditDialog(false);
+          setSaleToEdit(null);
+        }}
+        receiptData={saleToEdit}
+      />
     </div>
   );
 };
