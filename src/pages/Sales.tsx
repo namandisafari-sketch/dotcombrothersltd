@@ -846,7 +846,7 @@ const Sales = () => {
         change: 0,
         notes: "",
         items: cart,
-        created_at: new Date().toISOString(),
+        created_at: saleTimestamp,
         receiptNumber: `REC-${Date.now()}`,
         businessInfo: {
           name: settings?.business_name || "Business Name",
@@ -859,7 +859,7 @@ const Sales = () => {
         },
         seasonalRemark: settings?.seasonal_remark || "",
         qrCodeUrl,
-        date: new Date().toLocaleString(),
+        date: new Date(saleTimestamp).toLocaleString(),
         showBackPage: (settings as any)?.show_back_page !== false,
       };
 
@@ -1023,8 +1023,13 @@ const Sales = () => {
 
         const tabSubtotal = tab.items.reduce((sum, item) => sum + (item.subtotal || item.price * item.quantity), 0);
 
-        // Generate receipt data
-        const settings = departmentSettings || globalSettings;
+        // Use selected sale date with current time if it's a past date
+        const selectedDate = new Date(saleDate);
+        const now = new Date();
+        const isToday = saleDate === now.toISOString().split('T')[0];
+        const saleTimestamp = isToday
+          ? now.toISOString()
+          : new Date(selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())).toISOString();
 
         const salePayload = {
           department_id: selectedDepartmentId,
@@ -1038,7 +1043,7 @@ const Sales = () => {
           receipt_number: `RCP${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`,
           sale_number: `SALE${String(Date.now()).slice(-8)}${Math.floor(Math.random() * 100)}`,
           status: 'completed' as const,
-          created_at: new Date().toISOString(),
+          created_at: saleTimestamp,
         };
 
         const { data: insertedSale, error: saleError } = await supabase

@@ -68,6 +68,7 @@ const PerfumePOS = () => {
   const [showNoCustomerWarning, setShowNoCustomerWarning] = useState(false);
   const [showParkDialog, setShowParkDialog] = useState(false);
   const [parkReason, setParkReason] = useState("");
+  const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Scanned product dialog state for wholesale/retail selection
   const [showScannedProductDialog, setShowScannedProductDialog] = useState(false);
@@ -472,6 +473,14 @@ const PerfumePOS = () => {
         pricePerMl: item.pricePerMl,
       }));
 
+      // Use selected sale date with current time if it's a past date
+      const selectedDateObj = new Date(saleDate);
+      const now = new Date();
+      const isToday = saleDate === now.toISOString().split('T')[0];
+      const saleTimestamp = isToday
+        ? now.toISOString()
+        : new Date(selectedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds())).toISOString();
+
       // Create properly formatted receipt data
       const receiptData = {
         receiptNumber: receiptNumber,
@@ -481,7 +490,7 @@ const PerfumePOS = () => {
         tax: 0,
         total: total,
         paymentMethod: paymentMethod.toUpperCase(),
-        date: new Date().toLocaleString(),
+        date: new Date(saleTimestamp).toLocaleString(),
         cashierName: cashierName,
         customerName: customerName,
         businessInfo: {
@@ -511,7 +520,7 @@ const PerfumePOS = () => {
         change: 0,
         notes: "",
         items: cart,
-        created_at: new Date().toISOString(),
+        created_at: saleTimestamp,
         receiptData: receiptData,
       };
 
@@ -549,6 +558,7 @@ const PerfumePOS = () => {
           is_invoice: hasWholesaleItems,
           remarks: mockSaleData.notes,
           sale_number: receiptNumber,
+          created_at: saleTimestamp,
         }])
         .select()
         .single();
@@ -1105,6 +1115,24 @@ const PerfumePOS = () => {
                       <span>Total:</span>
                       <span>UGX {total.toLocaleString()}</span>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Sale Date
+                    </Label>
+                    <Input
+                      type="date"
+                      value={saleDate}
+                      onChange={(e) => setSaleDate(e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                    {saleDate !== new Date().toISOString().split('T')[0] && (
+                      <p className="text-xs text-orange-600 dark:text-orange-400">
+                        ⚠️ Recording sale for a past date: {new Date(saleDate).toLocaleDateString()}
+                      </p>
+                    )}
                   </div>
 
                   <Button

@@ -22,12 +22,12 @@ const Reports = () => {
   const { selectedDepartmentId, selectedDepartment } = useDepartment();
   const [dateFilter, setDateFilter] = useState<"daily" | "weekly" | "monthly">("daily");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedReportDate, setSelectedReportDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const getDateRange = () => {
-    const now = new Date();
-    const today = now.toISOString().split("T")[0];
+    const today = selectedReportDate;
 
     if (dateFilter === "daily") {
       return {
@@ -630,6 +630,16 @@ const Reports = () => {
                 <SelectItem value="monthly">Monthly</SelectItem>
               </SelectContent>
             </Select>
+
+            {dateFilter === "daily" && (
+              <Input
+                type="date"
+                value={selectedReportDate}
+                onChange={(e) => setSelectedReportDate(e.target.value)}
+                className="w-[160px]"
+                max={new Date().toISOString().split("T")[0]}
+              />
+            )}
             <Button
               variant="outline"
               onClick={handleRefresh}
