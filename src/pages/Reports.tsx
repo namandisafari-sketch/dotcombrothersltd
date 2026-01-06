@@ -11,6 +11,7 @@ import { FileText, Download, TrendingUp, AlertTriangle, Package, RefreshCw, Undo
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ const Reports = () => {
   const queryClient = useQueryClient();
 
   const getDateRange = () => {
+    const now = new Date();
     const today = selectedReportDate;
 
     if (dateFilter === "daily") {
