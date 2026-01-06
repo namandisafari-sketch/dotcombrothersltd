@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, Barcode, Plus, Trash2, ShoppingCart, AlertTriangle } from "lucide-react";
+import { Search, Barcode, Plus, Trash2, ShoppingCart, AlertTriangle, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
 import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
@@ -78,6 +78,7 @@ const Sales = () => {
   const [showVariantSelector, setShowVariantSelector] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState<any>(null);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Fetch department settings for receipt
   const { data: departmentSettings } = useQuery({
@@ -658,6 +659,14 @@ const Sales = () => {
       }
 
       // Insert sale into database (only if not demo mode)
+      // Use selected sale date with current time if it's a past date
+      const selectedDate = new Date(saleDate);
+      const now = new Date();
+      const isToday = saleDate === now.toISOString().split('T')[0];
+      const saleTimestamp = isToday 
+        ? now.toISOString() 
+        : new Date(selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())).toISOString();
+
       const salePayload = {
         sale: {
           department_id: mockSaleData.department_id,
@@ -671,6 +680,7 @@ const Sales = () => {
           receipt_number: `RCP${String(Date.now()).slice(-6)}`,
           sale_number: `SALE${String(Date.now()).slice(-8)}`,
           status: 'completed' as const,
+          created_at: saleTimestamp,
         },
         items: cart.map((item) => ({
           product_id: item.productId || null,
@@ -1083,6 +1093,24 @@ const Sales = () => {
                       <p className="text-xs text-muted-foreground">
                         Leave empty for "Walk-in Customer" or enter customer name
                       </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <CalendarIcon className="w-4 h-4" />
+                        Sale Date
+                      </Label>
+                      <Input
+                        type="date"
+                        value={saleDate}
+                        onChange={(e) => setSaleDate(e.target.value)}
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                      {saleDate !== new Date().toISOString().split('T')[0] && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400">
+                          ⚠️ Recording sale for a past date: {new Date(saleDate).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">

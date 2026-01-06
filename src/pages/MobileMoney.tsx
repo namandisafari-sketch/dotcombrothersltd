@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash, ShoppingCart, AlertTriangle, TrendingUp, Package } from "lucide-react";
+import { Plus, Pencil, Trash, ShoppingCart, AlertTriangle, TrendingUp, Package, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -83,6 +83,7 @@ const MobileMoney = () => {
   const [showMobileMoneyDialog, setShowMobileMoneyDialog] = useState(false);
   const [completedSaleId, setCompletedSaleId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState("");
+  const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [customPriceDialog, setCustomPriceDialog] = useState<{ open: boolean; index: number; currentPrice: number }>({ open: false, index: -1, currentPrice: 0 });
   const [customPriceValue, setCustomPriceValue] = useState("");
 
@@ -414,6 +415,14 @@ const MobileMoney = () => {
       const { data: receiptNumber, error: rcpError } = await supabase.rpc('generate_receipt_number');
       const finalReceiptNumber = rcpError ? `RCP${Date.now()}` : receiptNumber;
 
+      // Use selected sale date with current time if it's a past date
+      const selectedDate = new Date(saleDate);
+      const now = new Date();
+      const isToday = saleDate === now.toISOString().split('T')[0];
+      const saleTimestamp = isToday 
+        ? now.toISOString() 
+        : new Date(selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())).toISOString();
+
       // Create sale record
       const { data: sale, error: saleError } = await supabase
         .from("sales")
@@ -428,6 +437,7 @@ const MobileMoney = () => {
           customer_id: null,
           cashier_name: cashierName,
           remarks: posCustomerPhone || null,
+          created_at: saleTimestamp,
         })
         .select()
         .single();
@@ -532,6 +542,7 @@ const MobileMoney = () => {
       setPosCart([]);
       setPosCustomerPhone("");
       setPaymentMethod("cash");
+      setSaleDate(new Date().toISOString().split('T')[0]);
       queryClient.invalidateQueries({ queryKey: ["products"] });
     } catch (error) {
       console.error("Sale error:", error);
@@ -948,6 +959,24 @@ const MobileMoney = () => {
 
                   {posCart.length > 0 && (
                     <>
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">
+                          <CalendarIcon className="w-4 h-4" />
+                          Sale Date
+                        </Label>
+                        <Input
+                          type="date"
+                          value={saleDate}
+                          onChange={(e) => setSaleDate(e.target.value)}
+                          max={new Date().toISOString().split('T')[0]}
+                        />
+                        {saleDate !== new Date().toISOString().split('T')[0] && (
+                          <p className="text-xs text-orange-600 dark:text-orange-400">
+                            ⚠️ Recording sale for a past date: {new Date(saleDate).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+
                       <div className="space-y-2">
                         <Label>Payment Method</Label>
                         <Select value={paymentMethod} onValueChange={setPaymentMethod}>
