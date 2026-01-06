@@ -12,14 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, Barcode, Plus, Trash2, ShoppingCart, AlertTriangle, CalendarIcon } from "lucide-react";
+import { Search, Barcode, Plus, Trash2, ShoppingCart, AlertTriangle, CalendarIcon, PauseCircle, Play } from "lucide-react";
 import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
 import { ReceiptActionsDialog } from "@/components/ReceiptActionsDialog";
 import { MobileMoneyDialog } from "@/components/pos/MobileMoneyDialog";
 import { VariantSelectorDialog } from "@/components/pos/VariantSelectorDialog";
+import { CartTabs } from "@/components/pos/CartTabs";
+import { ParkedCartsPanel } from "@/components/pos/ParkedCartsPanel";
 import { useDepartment } from "@/contexts/DepartmentContext";
 import { useDemoMode } from "@/contexts/DemoModeContext";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 interface CartItem {
   id: string;
@@ -80,6 +83,218 @@ const Sales = () => {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
+  // ============ MULTI-CART STATE ============
+  // Cart tabs for managing multiple orders simultaneously
+  interface CartTabData {
+    id: string;
+    name: string;
+    items: CartItem[];
+    customerName: string;
+    paymentMethod: string;
+  }
+
+  const CART_TABS_KEY = "sales-pos-cart-tabs";
+  const PARKED_CARTS_KEY = "sales-pos-parked-carts";
+
+  // Initialize cart tabs from localStorage or with default
+  const [cartTabs, setCartTabs] = useState<CartTabData[]>(() => {
+    const saved = localStorage.getItem(CART_TABS_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.length > 0) return parsed;
+      } catch { }
+    }
+    return [{ id: 'cart-1', name: 'Order 1', items: [], customerName: '', paymentMethod: 'cash' }];
+  });
+
+  const [activeCartId, setActiveCartId] = useState<string>(() => {
+    const saved = localStorage.getItem(CART_TABS_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.length > 0) return parsed[0].id;
+      } catch { }
+    }
+    return 'cart-1';
+  });
+
+  // Parked carts with localStorage persistence
+  const [parkedCarts, setParkedCarts] = useState<Array<{
+    id: string;
+    name: string;
+    items: CartItem[];
+    customerName: string;
+    customerId: string | null;
+    parkedAt: Date;
+    reason?: string;
+    paymentMethod: string;
+  }>>(() => {
+    const saved = localStorage.getItem(PARKED_CARTS_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  const [showParkDialog, setShowParkDialog] = useState(false);
+  const [parkReason, setParkReason] = useState("");
+
+  // Persist cart tabs to localStorage
+  useEffect(() => {
+    localStorage.setItem(CART_TABS_KEY, JSON.stringify(cartTabs));
+  }, [cartTabs]);
+
+  // Persist parked carts to localStorage
+  useEffect(() => {
+    localStorage.setItem(PARKED_CARTS_KEY, JSON.stringify(parkedCarts));
+  }, [parkedCarts]);
+
+  // Sync current cart with active tab
+  useEffect(() => {
+    const activeTab = cartTabs.find(t => t.id === activeCartId);
+    if (activeTab) {
+      setCart(activeTab.items);
+      setCustomerName(activeTab.customerName);
+      setPaymentMethod(activeTab.paymentMethod);
+    }
+  }, [activeCartId]);
+
+  // Update active tab when cart changes
+  useEffect(() => {
+    setCartTabs(prev => prev.map(tab =>
+      tab.id === activeCartId
+        ? { ...tab, items: cart, customerName, paymentMethod }
+        : tab
+    ));
+  }, [cart, customerName, paymentMethod, activeCartId]);
+
+  // Cart Tab Management Functions
+  const createNewCart = () => {
+    const newId = `cart-${Date.now()}`;
+    const newTabNumber = cartTabs.length + 1;
+    const newTab: CartTabData = {
+      id: newId,
+      name: `Order ${newTabNumber}`,
+      items: [],
+      customerName: '',
+      paymentMethod: 'cash'
+    };
+    setCartTabs(prev => [...prev, newTab]);
+    setActiveCartId(newId);
+    toast.success(`New order created: Order ${newTabNumber}`);
+  };
+
+  const switchToCart = (cartId: string) => {
+    // Save current cart first
+    setCartTabs(prev => prev.map(tab =>
+      tab.id === activeCartId
+        ? { ...tab, items: cart, customerName, paymentMethod }
+        : tab
+    ));
+    setActiveCartId(cartId);
+  };
+
+  const closeCart = (cartId: string) => {
+    const tabToClose = cartTabs.find(t => t.id === cartId);
+    if (tabToClose && tabToClose.items.length > 0) {
+      toast.error("Cannot close cart with items. Park it first or complete the sale.");
+      return;
+    }
+
+    if (cartTabs.length <= 1) {
+      toast.error("Cannot close the last cart");
+      return;
+    }
+
+    const newTabs = cartTabs.filter(t => t.id !== cartId);
+    setCartTabs(newTabs);
+
+    if (activeCartId === cartId) {
+      setActiveCartId(newTabs[0].id);
+    }
+    toast.success("Order closed");
+  };
+
+  // Park Cart Functions
+  const parkCurrentCart = () => {
+    if (cart.length === 0) {
+      toast.error("Cart is empty");
+      return;
+    }
+
+    const parkedCart = {
+      id: `parked-${Date.now()}`,
+      name: customerName || "Walk-in Customer",
+      items: [...cart],
+      customerName: customerName || "Walk-in Customer",
+      customerId: selectedCustomerId,
+      parkedAt: new Date(),
+      reason: parkReason,
+      paymentMethod: paymentMethod,
+    };
+
+    setParkedCarts(prev => [...prev, parkedCart]);
+
+    // Clear current cart
+    setCart([]);
+    setCustomerName("");
+    setSelectedCustomerId(null);
+    setParkReason("");
+    setShowParkDialog(false);
+
+    // Update the tab
+    setCartTabs(prev => prev.map(tab =>
+      tab.id === activeCartId
+        ? { ...tab, items: [], customerName: '', paymentMethod: 'cash' }
+        : tab
+    ));
+
+    toast.success(`Order parked: ${parkedCart.name}`);
+  };
+
+  const resumeParkedCart = (parkedCartId: string) => {
+    const parked = parkedCarts.find(p => p.id === parkedCartId);
+    if (!parked) return;
+
+    // If current cart has items, ask to create new tab
+    if (cart.length > 0) {
+      // Create a new cart tab for the parked order
+      const newId = `cart-${Date.now()}`;
+      const newTab: CartTabData = {
+        id: newId,
+        name: parked.name || `Order ${cartTabs.length + 1}`,
+        items: parked.items,
+        customerName: parked.customerName,
+        paymentMethod: parked.paymentMethod || 'cash'
+      };
+      setCartTabs(prev => [...prev, newTab]);
+      setActiveCartId(newId);
+    } else {
+      // Load into current cart
+      setCart(parked.items);
+      setCustomerName(parked.customerName);
+      if (parked.customerId) {
+        setSelectedCustomerId(parked.customerId);
+      }
+      setPaymentMethod(parked.paymentMethod || 'cash');
+    }
+
+    // Remove from parked
+    setParkedCarts(prev => prev.filter(p => p.id !== parkedCartId));
+    toast.success(`Order resumed: ${parked.name}`);
+  };
+
+  const deleteParkedCart = (parkedCartId: string) => {
+    setParkedCarts(prev => prev.filter(p => p.id !== parkedCartId));
+    toast.success("Parked order deleted");
+  };
+  // ============ END MULTI-CART STATE ============
+
   // Fetch department settings for receipt
   const { data: departmentSettings } = useQuery({
     queryKey: ["department-settings", selectedDepartmentId],
@@ -108,47 +323,47 @@ const Sales = () => {
     queryKey: ["products", searchQuery, barcode, selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      
+
       const { data: allProducts } = await supabase
         .from("products")
         .select("*")
         .eq("department_id", selectedDepartmentId);
-      
+
       if (!allProducts) return [];
-      
+
       let filteredProducts = allProducts.filter((p: any) => !p.is_archived);
-      
+
       if (searchQuery) {
         const lowerSearch = searchQuery.toLowerCase();
-        filteredProducts = filteredProducts.filter((p: any) => 
+        filteredProducts = filteredProducts.filter((p: any) =>
           p.name?.toLowerCase().includes(lowerSearch) ||
           p.barcode?.toLowerCase().includes(lowerSearch) ||
           p.internal_barcode?.toLowerCase().includes(lowerSearch)
         );
       }
-      
+
       if (barcode) {
-        filteredProducts = filteredProducts.filter((p: any) => 
+        filteredProducts = filteredProducts.filter((p: any) =>
           p.barcode === barcode || p.internal_barcode === barcode
         );
       }
-      
+
       // Get variants for products
       const productIds = filteredProducts.map((p: any) => p.id);
       const { data: allVariants } = await supabase.from("product_variants").select("*");
       const variantsForProducts = (allVariants || []).filter((v: any) => productIds.includes(v.product_id));
-      
+
       const productsWithVariants = new Set(
         variantsForProducts.map((v: any) => v.product_id)
       );
-      
+
       // Filter out perfume products only (keep all others including out-of-stock)
       const finalFiltered = filteredProducts.filter((product: any) => {
         if (product.tracking_type === 'ml') return false;
         if (product.name === "Oil Perfume") return false;
         return true;
       });
-      
+
       // Sort: in-stock products first, then out-of-stock
       const sorted = finalFiltered.sort((a: any, b: any) => {
         const aStock = (a.current_stock || 0) + (a.stock || 0);
@@ -157,7 +372,7 @@ const Sales = () => {
         if (aStock <= 0 && bStock > 0) return 1;
         return a.name.localeCompare(b.name);
       });
-      
+
       return sorted.slice(0, 50);
     },
     enabled: !!selectedDepartmentId,
@@ -168,16 +383,16 @@ const Sales = () => {
     queryKey: ["product-variant-counts", products?.map((p: any) => p.id)],
     queryFn: async () => {
       if (!products || products.length === 0) return {};
-      
+
       const productIds = products.map((p: any) => p.id);
       const { data: allVariants } = await supabase.from("product_variants").select("*");
       const relevantVariants = (allVariants || []).filter((v: any) => productIds.includes(v.product_id));
-      
+
       const counts: Record<string, number> = {};
       relevantVariants.forEach((variant: any) => {
         counts[variant.product_id] = (counts[variant.product_id] || 0) + 1;
       });
-      
+
       return counts;
     },
     enabled: !!products && products.length > 0,
@@ -188,7 +403,7 @@ const Sales = () => {
     queryKey: ["product-variants-pos", selectedProductForVariant?.id],
     queryFn: async () => {
       if (!selectedProductForVariant?.id) return [];
-      
+
       const { data: variants } = await supabase
         .from("product_variants")
         .select("*")
@@ -202,7 +417,7 @@ const Sales = () => {
     queryKey: ["customers", selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      
+
       const { data: allCustomers } = await supabase
         .from("customers")
         .select("*")
@@ -244,20 +459,20 @@ const Sales = () => {
     queryKey: ["services", searchQuery, selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      
+
       // Show services from the current department
       const { data: allServices } = await supabase
         .from("services")
         .select("*")
         .eq("department_id", selectedDepartmentId)
         .eq("is_active", true);
-      
+
       let filtered = allServices || [];
       if (searchQuery) {
         const lowerSearch = searchQuery.toLowerCase();
         filtered = filtered.filter((s: any) => s.name?.toLowerCase().includes(lowerSearch));
       }
-      
+
       return filtered.slice(0, 50);
     },
     enabled: !!selectedDepartmentId,
@@ -270,7 +485,7 @@ const Sales = () => {
       .select("*")
       .eq("product_id", product.id)
       .limit(1);
-    
+
     if (variants && variants.length > 0) {
       // Show variant selector
       setSelectedProductForVariant(product);
@@ -283,9 +498,9 @@ const Sales = () => {
 
   const handleVariantSelect = async (variant: any) => {
     if (!selectedProductForVariant) return;
-    
+
     const product = selectedProductForVariant;
-    
+
     // Use addToCart to maintain consistency and stock checking
     await addToCart(
       product,
@@ -294,7 +509,7 @@ const Sales = () => {
       variant.variant_name,
       variant.price_adjustment || 0
     );
-    
+
     setSelectedProductForVariant(null);
   };
 
@@ -308,82 +523,18 @@ const Sales = () => {
     // Prevent duplicate rapid clicks
     if (isAddingToCart) return;
     setIsAddingToCart(true);
-    
+
     try {
       // Create unique cart ID for variants
       const cartItemId = variantId ? `${item.id}-${variantId}` : item.id;
-    
-    // Check stock availability for products before adding
-    if (type === "product") {
-      const defaultQty = item.tracking_type === "milliliter" ? 100 : 1;
-      
-      // Check variant stock if variantId is provided
-      if (variantId) {
-        const stockCheck = await checkVariantStockAvailability(variantId, defaultQty);
-        if (!stockCheck.available) {
-          toast.error(stockCheck.message || "Insufficient stock");
-          return;
-        }
-      } else {
-        // Check product stock
-        const stockCheck = await checkStockAvailability(
-          item.id,
-          defaultQty,
-          item.tracking_type,
-          item.tracking_type === "milliliter" ? defaultQty : undefined
-        );
-        
-        if (!stockCheck.available) {
-          toast.error(stockCheck.message || "Insufficient stock");
-          return;
-        }
-      }
-    }
 
-    const existingItem = cart.find((i) => i.id === cartItemId);
-    
-    // Use price field (or selling_price/base_price as fallback)
-    let price = type === "product" 
-      ? (item.price || item.selling_price || 0) 
-      : (item.price || item.base_price || 0);
-    let selectedTier = "default";
-    let defaultQuantity = 1;
-    
-    if (type === "product" && item.tracking_type === "milliliter") {
-      defaultQuantity = 100;
-      if (item.retail_price_per_ml && item.retail_price_per_ml > 0) {
-        price = item.retail_price_per_ml;
-        selectedTier = "retail";
-      } else if (item.wholesale_price_per_ml && item.wholesale_price_per_ml > 0) {
-        price = item.wholesale_price_per_ml;
-        selectedTier = "wholesale";
-      }
-    } else if (type === "product" && item.pricing_tiers) {
-      if (item.pricing_tiers.retail && item.pricing_tiers.retail > 0) {
-        price = item.pricing_tiers.retail;
-        selectedTier = "retail";
-      } else if (item.pricing_tiers.wholesale && item.pricing_tiers.wholesale > 0) {
-        price = item.pricing_tiers.wholesale;
-        selectedTier = "wholesale";
-      } else if (item.pricing_tiers.individual && item.pricing_tiers.individual > 0) {
-        price = item.pricing_tiers.individual;
-        selectedTier = "individual";
-      }
-    }
-    
-    // Apply variant price adjustment AFTER all other pricing logic
-    if (variantPriceAdjustment !== undefined) {
-      price = price + variantPriceAdjustment;
-    }
-    
-    if (existingItem) {
-      const newQuantity = existingItem.quantity + (item.tracking_type === "milliliter" ? 100 : 1);
-      
-      // Re-check stock for the new quantity
+      // Check stock availability for products before adding
       if (type === "product") {
+        const defaultQty = item.tracking_type === "milliliter" ? 100 : 1;
+
         // Check variant stock if variantId is provided
         if (variantId) {
-          const stockCheck = await checkVariantStockAvailability(variantId, newQuantity);
+          const stockCheck = await checkVariantStockAvailability(variantId, defaultQty);
           if (!stockCheck.available) {
             toast.error(stockCheck.message || "Insufficient stock");
             return;
@@ -392,48 +543,112 @@ const Sales = () => {
           // Check product stock
           const stockCheck = await checkStockAvailability(
             item.id,
-            newQuantity,
+            defaultQty,
             item.tracking_type,
-            item.tracking_type === "milliliter" ? newQuantity : undefined
+            item.tracking_type === "milliliter" ? defaultQty : undefined
           );
-          
+
           if (!stockCheck.available) {
             toast.error(stockCheck.message || "Insufficient stock");
             return;
           }
         }
       }
-      
-      setCart(cart.map((i) =>
-        i.id === cartItemId ? { ...i, quantity: newQuantity, subtotal: i.price * newQuantity } : i
-      ));
-    } else {
-      setCart([
-        ...cart,
-        {
-          id: cartItemId,
-          name: `${item.name}${variantName ? ` - ${variantName}` : ''}`,
-          price: Number(price),
-          quantity: defaultQuantity,
-          type,
-          productId: type === "product" ? item.id : undefined,
-          serviceId: type === "service" ? item.id : undefined,
-          variantId,
-          variantName,
-          allowCustomPrice: type === "product" ? item.allow_custom_price : item.is_negotiable,
-          minPrice: item.min_price ? Number(item.min_price) : undefined,
-          maxPrice: item.max_price ? Number(item.max_price) : undefined,
-          trackingType: item.tracking_type,
-          volumeUnit: item.volume_unit,
-          pricingTiers: item.pricing_tiers,
-          selectedTier: selectedTier,
-          subtotal: Number(price) * defaultQuantity,
-        },
-    ]);
-    }
-    setSearchQuery("");
-    setBarcode("");
-    toast.success(`${item.name} added to cart`);
+
+      const existingItem = cart.find((i) => i.id === cartItemId);
+
+      // Use price field (or selling_price/base_price as fallback)
+      let price = type === "product"
+        ? (item.price || item.selling_price || 0)
+        : (item.price || item.base_price || 0);
+      let selectedTier = "default";
+      let defaultQuantity = 1;
+
+      if (type === "product" && item.tracking_type === "milliliter") {
+        defaultQuantity = 100;
+        if (item.retail_price_per_ml && item.retail_price_per_ml > 0) {
+          price = item.retail_price_per_ml;
+          selectedTier = "retail";
+        } else if (item.wholesale_price_per_ml && item.wholesale_price_per_ml > 0) {
+          price = item.wholesale_price_per_ml;
+          selectedTier = "wholesale";
+        }
+      } else if (type === "product" && item.pricing_tiers) {
+        if (item.pricing_tiers.retail && item.pricing_tiers.retail > 0) {
+          price = item.pricing_tiers.retail;
+          selectedTier = "retail";
+        } else if (item.pricing_tiers.wholesale && item.pricing_tiers.wholesale > 0) {
+          price = item.pricing_tiers.wholesale;
+          selectedTier = "wholesale";
+        } else if (item.pricing_tiers.individual && item.pricing_tiers.individual > 0) {
+          price = item.pricing_tiers.individual;
+          selectedTier = "individual";
+        }
+      }
+
+      // Apply variant price adjustment AFTER all other pricing logic
+      if (variantPriceAdjustment !== undefined) {
+        price = price + variantPriceAdjustment;
+      }
+
+      if (existingItem) {
+        const newQuantity = existingItem.quantity + (item.tracking_type === "milliliter" ? 100 : 1);
+
+        // Re-check stock for the new quantity
+        if (type === "product") {
+          // Check variant stock if variantId is provided
+          if (variantId) {
+            const stockCheck = await checkVariantStockAvailability(variantId, newQuantity);
+            if (!stockCheck.available) {
+              toast.error(stockCheck.message || "Insufficient stock");
+              return;
+            }
+          } else {
+            // Check product stock
+            const stockCheck = await checkStockAvailability(
+              item.id,
+              newQuantity,
+              item.tracking_type,
+              item.tracking_type === "milliliter" ? newQuantity : undefined
+            );
+
+            if (!stockCheck.available) {
+              toast.error(stockCheck.message || "Insufficient stock");
+              return;
+            }
+          }
+        }
+
+        setCart(cart.map((i) =>
+          i.id === cartItemId ? { ...i, quantity: newQuantity, subtotal: i.price * newQuantity } : i
+        ));
+      } else {
+        setCart([
+          ...cart,
+          {
+            id: cartItemId,
+            name: `${item.name}${variantName ? ` - ${variantName}` : ''}`,
+            price: Number(price),
+            quantity: defaultQuantity,
+            type,
+            productId: type === "product" ? item.id : undefined,
+            serviceId: type === "service" ? item.id : undefined,
+            variantId,
+            variantName,
+            allowCustomPrice: type === "product" ? item.allow_custom_price : item.is_negotiable,
+            minPrice: item.min_price ? Number(item.min_price) : undefined,
+            maxPrice: item.max_price ? Number(item.max_price) : undefined,
+            trackingType: item.tracking_type,
+            volumeUnit: item.volume_unit,
+            pricingTiers: item.pricing_tiers,
+            selectedTier: selectedTier,
+            subtotal: Number(price) * defaultQuantity,
+          },
+        ]);
+      }
+      setSearchQuery("");
+      setBarcode("");
+      toast.success(`${item.name} added to cart`);
     } finally {
       setIsAddingToCart(false);
     }
@@ -444,11 +659,11 @@ const Sales = () => {
     if (!scannedBarcode.trim()) return;
 
     console.log('Scanning barcode:', scannedBarcode);
-    
+
     // First, check if barcode matches a variant
     const { data: allVariants } = await supabase.from("product_variants").select("*");
     const matchingVariants = (allVariants || []).filter((v: any) => v.barcode === scannedBarcode);
-    
+
     if (matchingVariants.length > 0) {
       const variant = matchingVariants[0];
       const { data: allProducts } = await supabase
@@ -456,11 +671,11 @@ const Sales = () => {
         .select("*")
         .eq("department_id", selectedDepartmentId);
       const product = (allProducts || []).find((p: any) => p.id === variant.product_id);
-      
+
       if (product) {
         // Add variant directly to cart with variant price
         addToCart(product, "product", variant.id, variant.variant_name, variant.price || 0);
-        
+
         toast.success(`${product.name} - ${variant.variant_name} added!`);
         setBarcode('');
         return;
@@ -472,14 +687,14 @@ const Sales = () => {
       .from("products")
       .select("*")
       .eq("department_id", selectedDepartmentId);
-    const matchedProducts = (allProducts || []).filter((p: any) => 
+    const matchedProducts = (allProducts || []).filter((p: any) =>
       p.barcode === scannedBarcode || p.internal_barcode === scannedBarcode
     ).slice(0, 1);
 
     if (matchedProducts && matchedProducts.length > 0) {
       const product = matchedProducts[0];
       const productVars = (allVariants || []).filter((v: any) => v.product_id === product.id);
-      
+
       if (productVars.length > 0) {
         // Show variant selector if product has variants
         setSelectedProductForVariant({
@@ -493,7 +708,7 @@ const Sales = () => {
         // Add product directly if no variants
         addToCart(product, "product");
       }
-      
+
       toast.success(`${product.name} found!`);
       setBarcode('');
     } else {
@@ -534,7 +749,7 @@ const Sales = () => {
   const updatePriceTier = (id: string, tier: string) => {
     const item = cart.find((i) => i.id === id);
     if (!item || !item.pricingTiers) return;
-    
+
     let newPrice = item.price;
     if (tier === "retail" && item.pricingTiers.retail) {
       newPrice = item.pricingTiers.retail;
@@ -546,7 +761,7 @@ const Sales = () => {
       const product = products?.find((p) => p.id === item.productId);
       if (product) newPrice = product.price || product.selling_price || 0;
     }
-    
+
     setCart(cart.map((i) => (i.id === id ? { ...i, price: newPrice, selectedTier: tier, subtotal: newPrice * i.quantity } : i)));
   };
 
@@ -592,7 +807,7 @@ const Sales = () => {
 
       // Use department settings or fallback to global settings
       const settings = departmentSettings || globalSettings;
-      
+
       // Generate QR code if WhatsApp number is available
       let qrCodeUrl;
       if (settings?.whatsapp_number) {
@@ -605,7 +820,7 @@ const Sales = () => {
           console.error('Failed to generate QR code:', err);
         }
       }
-      
+
       // Create sale data with business info for receipt
       const mockSaleData = {
         id: `sale_${Date.now()}`, // Generate a temporary ID
@@ -650,7 +865,7 @@ const Sales = () => {
           id: `demo_${Date.now()}`,
           receipt_number: `DEMO-${Date.now()}`,
         };
-        
+
         showDemoWarning();
         setCurrentReceiptData(mockReceipt);
         setShowReceiptDialog(true);
@@ -663,8 +878,8 @@ const Sales = () => {
       const selectedDate = new Date(saleDate);
       const now = new Date();
       const isToday = saleDate === now.toISOString().split('T')[0];
-      const saleTimestamp = isToday 
-        ? now.toISOString() 
+      const saleTimestamp = isToday
+        ? now.toISOString()
         : new Date(selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())).toISOString();
 
       const salePayload = {
@@ -695,7 +910,7 @@ const Sales = () => {
           bottle_cost: item.bottleCost || null,
         }))
       };
-      
+
       // Insert sale
       const { data: insertedSale, error: saleError } = await supabase
         .from("sales")
@@ -724,9 +939,9 @@ const Sales = () => {
         ml_amount: item.ml_amount || null,
         price_per_ml: item.price_per_ml || null,
       }));
-      
+
       console.log("Inserting sale items:", itemsWithSaleId);
-      
+
       const { error: itemsError } = await supabase.from("sale_items").insert(itemsWithSaleId);
       if (itemsError) {
         console.error("Failed to insert sale items:", itemsError);
@@ -755,15 +970,23 @@ const Sales = () => {
       await queryClient.invalidateQueries({ queryKey: ["product-variant-counts"] });
       await queryClient.invalidateQueries({ queryKey: ["sales"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      
+
       toast.success("Sale completed successfully!");
-      
+
       // Only show receipt if NOT mobile money
       if (paymentMethod !== "mobile_money") {
         setCurrentReceiptData(sale);
         setShowReceiptDialog(true);
         setCart([]);
+        setCustomerName("");
         setPaymentMethod("cash");
+
+        // Reset the active cart tab
+        setCartTabs(prev => prev.map(tab =>
+          tab.id === activeCartId
+            ? { ...tab, items: [], customerName: '', paymentMethod: 'cash' }
+            : tab
+        ));
       }
     },
     onError: (error: any) => {
@@ -832,30 +1055,29 @@ const Sales = () => {
                         const displayPrice = product.tracking_type === "ml"
                           ? (product.retail_price_per_ml || product.wholesale_price_per_ml || 0)
                           : (product.price || product.selling_price || 0);
-                      
-                        const priceLabel = product.tracking_type === "ml" 
-                          ? "per ml" 
+
+                        const priceLabel = product.tracking_type === "ml"
+                          ? "per ml"
                           : "";
-                      
+
                         // Use stock field (or current_stock as fallback)
                         const stockValue = product.tracking_type === "ml"
                           ? (product.total_ml || 0)
                           : (product.stock ?? product.current_stock ?? 0);
-                        
+
                         const stockDisplay = product.tracking_type === "ml"
                           ? `${stockValue} ml`
                           : stockValue;
-                        
+
                         const isOutOfStock = stockValue <= 0 && !variantCounts[product.id];
-                      
+
                         return (
                           <div
                             key={product.id}
-                            className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg transition-colors gap-2 ${
-                              isOutOfStock 
-                                ? "bg-destructive/10 border border-destructive/20 opacity-60" 
-                                : "bg-muted/30 hover:bg-muted/50"
-                            }`}
+                            className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg transition-colors gap-2 ${isOutOfStock
+                              ? "bg-destructive/10 border border-destructive/20 opacity-60"
+                              : "bg-muted/30 hover:bg-muted/50"
+                              }`}
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -949,10 +1171,29 @@ const Sales = () => {
             </div>
 
             {/* Cart */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 space-y-4">
+              {/* Parked Carts Panel */}
+              <ParkedCartsPanel
+                parkedCarts={parkedCarts}
+                onResume={resumeParkedCart}
+                onDelete={deleteParkedCart}
+              />
+
               <Card className="sticky top-24">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                <CardHeader className="pb-2">
+                  {/* Cart Tabs */}
+                  <CartTabs
+                    tabs={cartTabs.map(tab => ({
+                      id: tab.id,
+                      name: tab.name,
+                      itemCount: tab.items.length
+                    }))}
+                    activeTabId={activeCartId}
+                    onTabChange={switchToCart}
+                    onNewTab={createNewCart}
+                    onCloseTab={closeCart}
+                  />
+                  <CardTitle className="flex items-center gap-2 mt-2">
                     <ShoppingCart className="w-5 h-5" />
                     Cart ({cart.length})
                   </CardTitle>
@@ -961,7 +1202,7 @@ const Sales = () => {
                   <div className="space-y-2 max-h-64 lg:max-h-80 overflow-y-auto">
                     {cart.map((item) => (
                       <div key={item.id} className="p-3 bg-muted/30 rounded-lg space-y-2">
-                         <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
                             <p className="font-medium text-sm">{item.name}</p>
                             {item.variantName && (
@@ -994,12 +1235,12 @@ const Sales = () => {
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
-                        
+
                         {item.pricingTiers && (item.pricingTiers.retail || item.pricingTiers.wholesale || item.pricingTiers.individual) && (
                           <div className="space-y-1">
                             <Label className="text-xs">Price Tier</Label>
-                            <Select 
-                              value={item.selectedTier || "default"} 
+                            <Select
+                              value={item.selectedTier || "default"}
                               onValueChange={(tier) => {
                                 let newPrice = item.price;
                                 if (tier === "retail" && item.pricingTiers?.retail) newPrice = item.pricingTiers.retail;
@@ -1031,7 +1272,7 @@ const Sales = () => {
                             </Select>
                           </div>
                         )}
-                        
+
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
                             <Label className="text-xs">
@@ -1075,6 +1316,20 @@ const Sales = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* Park Cart Button */}
+                  {cart.length > 0 && (
+                    <div className="pt-2">
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2"
+                        onClick={() => setShowParkDialog(true)}
+                      >
+                        <PauseCircle className="w-4 h-4" />
+                        Park Order (Hold for Later)
+                      </Button>
+                    </div>
+                  )}
 
                   <div className="border-t pt-4 space-y-3">
                     <div className="flex justify-between text-base sm:text-lg font-bold">
@@ -1176,9 +1431,18 @@ const Sales = () => {
             });
             setShowReceiptDialog(true);
             setCart([]);
+            setCustomerName("");
             setPaymentMethod("cash");
             setShowMobileMoneyDialog(false);
             setCompletedSaleId(null);
+
+            // Reset the active cart tab
+            setCartTabs(prev => prev.map(tab =>
+              tab.id === activeCartId
+                ? { ...tab, items: [], customerName: '', paymentMethod: 'cash' }
+                : tab
+            ));
+
             queryClient.invalidateQueries();
           }}
         />
@@ -1191,6 +1455,49 @@ const Sales = () => {
           variants={productVariants as any[]}
           onSelectVariant={handleVariantSelect}
         />
+
+        {/* Park Cart Dialog */}
+        <Dialog open={showParkDialog} onOpenChange={setShowParkDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PauseCircle className="w-5 h-5" />
+                Park Order
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                Parking this order will save it for later. You can resume it anytime.
+              </p>
+              <div className="space-y-2">
+                <Label>Reason (Optional)</Label>
+                <Input
+                  placeholder="e.g., Customer went to get more cash"
+                  value={parkReason}
+                  onChange={(e) => setParkReason(e.target.value)}
+                />
+              </div>
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <p className="text-sm font-medium">Order Summary:</p>
+                <p className="text-sm text-muted-foreground">
+                  {cart.length} items • UGX {subtotal.toLocaleString()}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Customer: {customerName || "Walk-in"}
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowParkDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={parkCurrentCart} className="gap-2">
+                <PauseCircle className="w-4 h-4" />
+                Park Order
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </>
   );
