@@ -962,9 +962,10 @@ const Sales = () => {
         console.log("Sale items inserted successfully");
       }
 
-      // Update mock sale data with actual sale ID and receipt number
+      // Update mock sale data with actual sale ID, receipt number and timestamp
       mockSaleData.id = insertedSale.id;
       mockSaleData.receiptNumber = insertedSale.receipt_number;
+      mockSaleData.created_at = insertedSale.created_at;
 
       // Check if payment method is mobile money - pause completion
       if (paymentMethod === "mobile_money") {

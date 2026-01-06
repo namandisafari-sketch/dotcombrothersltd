@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Printer, Calendar, Ban, Droplet } from "lucide-react";
+import { Search, Eye, Printer, Calendar, Ban, Droplet, Edit } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +14,7 @@ import { printReceipt, generateReceiptHTML } from "@/utils/receiptPrinter";
 import { voidSale } from "@/utils/voidSale";
 import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
+import { ReceiptEditDialog } from "@/components/ReceiptEditDialog";
 import { PerfumeDepartmentSelector } from "@/components/PerfumeDepartmentSelector";
 import { PrintPreviewDialog } from "@/components/PrintPreviewDialog";
 import { MobilePrintDialog } from "@/components/MobilePrintDialog";
@@ -36,6 +37,8 @@ const PerfumeSalesHistory = () => {
   const [printPreviewHtml, setPrintPreviewHtml] = useState("");
   const [showMobilePrint, setShowMobilePrint] = useState(false);
   const [mobilePrintData, setMobilePrintData] = useState<any>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [saleToEdit, setSaleToEdit] = useState<any>(null);
 
   // Determine which department to filter by
   const activeDepartmentId = isAdmin ? selectedDepartmentId : userDepartmentId;
@@ -86,7 +89,7 @@ const PerfumeSalesHistory = () => {
     mutationFn: async ({ saleId, reason }: { saleId: string; reason: string }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No user found");
-      
+
       return await voidSale({ saleId, reason, userId: user.id });
     },
     onSuccess: (success) => {
@@ -114,7 +117,7 @@ const PerfumeSalesHistory = () => {
       return;
     }
     if (!saleToVoid) return;
-    
+
     voidMutation.mutate({
       saleId: saleToVoid.id,
       reason: voidReason.trim(),
@@ -124,6 +127,40 @@ const PerfumeSalesHistory = () => {
   const handleViewDetails = (sale: any) => {
     setSelectedSale(sale);
     setShowDetailsDialog(true);
+  };
+
+  const handleEditSale = (sale: any) => {
+    if (sale.status === "voided") {
+      toast.error("Cannot edit a voided sale");
+      return;
+    }
+    // Format sale data for the edit dialog
+    const editData = {
+      id: sale.id,
+      sale_number: sale.sale_number,
+      receiptNumber: sale.receipt_number,
+      items: sale.sale_items?.map((item: any) => ({
+        id: item.id,
+        name: item.item_name || item.name,
+        item_name: item.item_name || item.name,
+        quantity: item.quantity,
+        price: item.unit_price,
+        unit_price: item.unit_price,
+        subtotal: item.total,
+        total: item.total,
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        service_id: item.service_id,
+        scent_mixture: item.scent_mixture,
+        customer_type: item.customer_type,
+      })) || [],
+      paymentMethod: sale.payment_method,
+      total: sale.total,
+      subtotal: sale.subtotal,
+      created_at: sale.created_at,
+    };
+    setSaleToEdit(editData);
+    setShowEditDialog(true);
   };
 
   const prepareReceiptData = async (sale: any) => {
@@ -156,7 +193,7 @@ const PerfumeSalesHistory = () => {
         .select("name, phone")
         .eq("id", sale.customer_id)
         .maybeSingle();
-      
+
       if (customer) {
         customerName = customer.name;
         customerPhone = customer.phone;
@@ -200,7 +237,7 @@ const PerfumeSalesHistory = () => {
   const handleReprintReceipt = async (sale: any) => {
     try {
       const receiptData = await prepareReceiptData(sale);
-      
+
       if (isMobile) {
         setMobilePrintData(receiptData);
         setShowMobilePrint(true);
@@ -363,6 +400,14 @@ const PerfumeSalesHistory = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            onClick={() => handleEditSale(sale)}
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => handleReprintReceipt(sale)}
                           >
                             <Printer className="h-4 w-4 mr-1" />
@@ -496,12 +541,12 @@ const PerfumeSalesHistory = () => {
                 ⚠️ Warning: This action cannot be undone
               </p>
               <p className="text-xs text-muted-foreground mt-2">
-                {hasPerfumeMixtures 
+                {hasPerfumeMixtures
                   ? "Canceling this sale will restore non-mixture items to stock. Perfume mixtures will be marked as damaged (non-returnable)."
                   : "Canceling this sale will restore all items to stock and exclude it from revenue calculations."}
               </p>
             </div>
-            
+
             {saleToVoid && (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -524,7 +569,7 @@ const PerfumeSalesHistory = () => {
                 )}
               </div>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="void-reason">Reason for Canceling *</Label>
               <Textarea
@@ -579,6 +624,16 @@ const PerfumeSalesHistory = () => {
           receiptData={mobilePrintData}
         />
       )}
+
+      {/* Edit Receipt Dialog */}
+      <ReceiptEditDialog
+        isOpen={showEditDialog}
+        onClose={() => {
+          setShowEditDialog(false);
+          setSaleToEdit(null);
+        }}
+        receiptData={saleToEdit}
+      />
     </div>
   );
 };

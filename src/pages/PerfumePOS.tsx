@@ -680,9 +680,11 @@ const PerfumePOS = () => {
         }
       }
 
-      // Update receipt data with actual receipt number
+      // Update receipt data with actual receipt number and metadata
       mockSaleData.receiptData.receiptNumber = insertedSale.receipt_number;
       mockSaleData.receiptData.invoiceNumber = insertedSale.invoice_number;
+      mockSaleData.receiptData.id = insertedSale.id;
+      mockSaleData.receiptData.created_at = insertedSale.created_at;
 
       // Send invoice email if wholesale and email is provided
       if (hasWholesaleItems && customerEmail) {

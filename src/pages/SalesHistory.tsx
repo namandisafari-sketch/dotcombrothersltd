@@ -213,6 +213,7 @@ const SalesHistory = () => {
       paymentMethod: sale.payment_method,
       total: sale.total,
       subtotal: sale.subtotal,
+      created_at: sale.created_at,
     };
     setSaleToEdit(editData);
     setShowEditDialog(true);

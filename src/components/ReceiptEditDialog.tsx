@@ -31,6 +31,7 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
   const queryClient = useQueryClient();
   const [items, setItems] = useState<EditItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "mobile_money" | "card" | "credit">("cash");
+  const [saleDate, setSaleDate] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -50,6 +51,14 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
       setItems(loadedItems);
       const method = receiptData.paymentMethod?.toLowerCase() || receiptData.payment_method || "cash";
       setPaymentMethod(method as "cash" | "mobile_money" | "card" | "credit");
+
+      if (receiptData.created_at) {
+        // Format to YYYY-MM-DDTHH:MM for datetime-local input using local time
+        const date = new Date(receiptData.created_at);
+        const tzOffset = date.getTimezoneOffset() * 60000;
+        const localISOTime = new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+        setSaleDate(localISOTime);
+      }
     }
   }, [receiptData, isOpen]);
 
@@ -81,7 +90,7 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
 
       // Get the actual sale ID from receipt data
       const saleId = receiptData.id || receiptData.saleId;
-      
+
       if (!saleId) throw new Error("Sale ID not found");
 
       // Calculate totals
@@ -128,6 +137,7 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
           subtotal,
           total,
           payment_method: paymentMethod,
+          created_at: saleDate ? new Date(saleDate).toISOString() : receiptData.created_at,
         })
         .eq("id", saleId);
 
@@ -261,7 +271,6 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
 
           <div className="flex justify-between items-center pt-4 border-t">
             <div>
-              <Label>Payment Method</Label>
               <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as typeof paymentMethod)}>
                 <SelectTrigger className="w-40">
                   <SelectValue />
@@ -273,6 +282,15 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
                   <SelectItem value="credit">Credit</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label>Sale Date & Time</Label>
+              <Input
+                type="datetime-local"
+                value={saleDate}
+                onChange={(e) => setSaleDate(e.target.value)}
+                className="w-48"
+              />
             </div>
             <div className="text-right">
               <div className="text-sm text-muted-foreground">Total</div>
@@ -290,7 +308,7 @@ export const ReceiptEditDialog = ({ isOpen, onClose, receiptData }: ReceiptEditD
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </DialogContent >
+    </Dialog >
   );
 };
