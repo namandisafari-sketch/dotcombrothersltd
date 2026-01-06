@@ -87,7 +87,7 @@ export function VariantSelectorDialog({
                       {variant.price_adjustment !== 0 && (
                         <div className="text-xs text-muted-foreground">
                           {variant.price_adjustment > 0 ? '+' : ''}
-                          {variant.price_adjustment.toLocaleString()}
+                          {(variant.price_adjustment || 0).toLocaleString()}
                         </div>
                       )}
                     </div>

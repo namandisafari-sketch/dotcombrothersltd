@@ -10,7 +10,7 @@ interface UseRealtimeUpdatesOptions {
   showToasts?: boolean;
 }
 
-export const useRealtimeUpdates = ({ 
+export const useRealtimeUpdates = ({
   tables = ['sales', 'products', 'expenses', 'credits', 'reconciliations'],
   departmentId,
   queryKeys = [],
@@ -39,12 +39,12 @@ export const useRealtimeUpdates = ({
           },
           async (payload) => {
             console.log(`Realtime ${table} change:`, payload.eventType, payload);
-            
+
             // Show toast notification for new sales
             if (showToasts && isInitializedRef.current && table === 'sales' && payload.eventType === 'INSERT') {
               const newSale = payload.new as any;
               let departmentName = 'Unknown';
-              
+
               // Fetch department name
               if (newSale.department_id) {
                 const { data: dept } = await supabase
@@ -54,24 +54,26 @@ export const useRealtimeUpdates = ({
                   .single();
                 if (dept) departmentName = dept.name;
               }
-              
+
               toast({
                 title: "🎉 New Sale!",
                 description: `${departmentName}: ${newSale.total?.toLocaleString() || 0} UGX - ${newSale.payment_method || 'Cash'}`,
               });
             }
-            
+
             // Invalidate all queries that might be affected
             queryClient.invalidateQueries({ queryKey: [table] });
-            
+
             // Invalidate specific query keys
             queryKeys.forEach(key => {
               queryClient.invalidateQueries({ queryKey: key });
             });
-            
+
             // Invalidate common dashboard/report queries
             queryClient.invalidateQueries({ queryKey: ['today-sales'] });
             queryClient.invalidateQueries({ queryKey: ['recent-sales'] });
+            queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+            queryClient.invalidateQueries({ queryKey: ['sales-report'] });
             queryClient.invalidateQueries({ queryKey: ['low-stock'] });
             queryClient.invalidateQueries({ queryKey: ['total-products'] });
             queryClient.invalidateQueries({ queryKey: ['total-customers'] });
@@ -79,7 +81,7 @@ export const useRealtimeUpdates = ({
             queryClient.invalidateQueries({ queryKey: ['perfume-stock'] });
             queryClient.invalidateQueries({ queryKey: ['perfume-recent-sales'] });
             queryClient.invalidateQueries({ queryKey: ['perfume-daily-revenue'] });
-            queryClient.invalidateQueries({ queryKey: ['perfume-sales-report'] });
+            queryClient.invalidateQueries({ queryKey: ['perfume-sales-history'] });
             queryClient.invalidateQueries({ queryKey: ['mobile-money-sales-today'] });
             queryClient.invalidateQueries({ queryKey: ['mobile-money-sales-all'] });
           }

@@ -18,14 +18,15 @@ export const PaymentTransactionsReport = ({ departmentId }: PaymentTransactionsR
       let query = supabase
         .from("sales")
         .select("*, customers(name)")
-        .in("payment_method", ["mobile_money", "card"]);
-      
+        .in("payment_method", ["mobile_money", "card"])
+        .neq("status", "voided");
+
       if (departmentId) {
         query = query.eq("department_id", departmentId);
       }
-      
+
       const { data, error } = await query.order("created_at", { ascending: false });
-      
+
       if (error) throw error;
       return data || [];
     },
@@ -157,7 +158,7 @@ export const PaymentTransactionsReport = ({ departmentId }: PaymentTransactionsR
                         {transaction.customers?.name || "Walk-in"}
                       </TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant={transaction.payment_method === "mobile_money" ? "default" : "secondary"}
                         >
                           {transaction.payment_method === "mobile_money" ? "Mobile Money" : "Card"}
