@@ -555,7 +555,7 @@ const Sales = () => {
         }
       }
 
-      const existingItem = cart.find((i) => i.id === cartItemId);
+      const existingItem = (cart || []).find((i) => i.id === cartItemId);
 
       // Use price field (or selling_price/base_price as fallback)
       let price = type === "product"
@@ -592,7 +592,7 @@ const Sales = () => {
       }
 
       if (existingItem) {
-        const newQuantity = existingItem.quantity + (item.tracking_type === "milliliter" ? 100 : 1);
+        const newQuantity = (existingItem.quantity || 0) + (item.tracking_type === "milliliter" ? 100 : 1);
 
         // Re-check stock for the new quantity
         if (type === "product") {
@@ -623,32 +623,33 @@ const Sales = () => {
           i.id === cartItemId ? { ...i, quantity: newQuantity, subtotal: i.price * newQuantity } : i
         ));
       } else {
-        setCart([
-          ...cart,
-          {
-            id: cartItemId,
-            name: `${item.name}${variantName ? ` - ${variantName}` : ''}`,
-            price: Number(price),
-            quantity: defaultQuantity,
-            type,
-            productId: type === "product" ? item.id : undefined,
-            serviceId: type === "service" ? item.id : undefined,
-            variantId,
-            variantName,
-            allowCustomPrice: type === "product" ? item.allow_custom_price : item.is_negotiable,
-            minPrice: item.min_price ? Number(item.min_price) : undefined,
-            maxPrice: item.max_price ? Number(item.max_price) : undefined,
-            trackingType: item.tracking_type,
-            volumeUnit: item.volume_unit,
-            pricingTiers: item.pricing_tiers,
-            selectedTier: selectedTier,
-            subtotal: Number(price) * defaultQuantity,
-          },
-        ]);
+        const newItem = {
+          id: cartItemId,
+          name: `${item.name}${variantName ? ` - ${variantName}` : ''}`,
+          price: Number(price),
+          quantity: defaultQuantity,
+          type,
+          productId: type === "product" ? item.id : undefined,
+          serviceId: type === "service" ? item.id : undefined,
+          variantId,
+          variantName,
+          allowCustomPrice: type === "product" ? item.allow_custom_price : item.is_negotiable,
+          minPrice: item.min_price ? Number(item.min_price) : undefined,
+          maxPrice: item.max_price ? Number(item.max_price) : undefined,
+          trackingType: item.tracking_type,
+          volumeUnit: item.volume_unit,
+          pricingTiers: item.pricing_tiers,
+          selectedTier: selectedTier,
+          subtotal: Number(price) * defaultQuantity,
+        };
+        setCart((prev) => [...prev, newItem]);
       }
       setSearchQuery("");
       setBarcode("");
       toast.success(`${item.name} added to cart`);
+    } catch (err) {
+      console.error("Cart error:", err);
+      toast.error("Error adding item to cart");
     } finally {
       setIsAddingToCart(false);
     }
@@ -997,510 +998,599 @@ const Sales = () => {
   return (
     <>
       <div className="min-h-screen bg-background pb-20 pt-32 lg:pt-20">
-        <Navigation />
+  // Batch Checkout Function
+        const completeAllSalesMutation = useMutation({
+          mutationFn: async () => {
+      const cartsWithItems = cartTabs.filter(tab => tab.items.length > 0);
+        if (cartsWithItems.length === 0) {
+        throw new Error("No carts have items to complete");
+      }
 
-        <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
-          <div className="mb-6">
-            <h2 className="text-2xl sm:text-3xl font-bold">Point of Sale</h2>
-            <p className="text-sm sm:text-base text-muted-foreground">
-              Process sales and manage transactions
-            </p>
-          </div>
+        toast.loading("Processing multiple orders...", {id: "batch-processing" });
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-            {/* Product/Service Search */}
-            <div className="lg:col-span-2 space-y-4">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Search Products & Services</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search by name..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10"
+        for (const tab of cartsWithItems) {
+        // We'll process each tab one by one
+        // Note: For simplicity, we use the same payment method and date for all
+        // In a real scenario, each tab might have its own settings
+        
+        const tabSubtotal = tab.items.reduce((sum, item) => sum + (item.subtotal || item.price * item.quantity), 0);
+
+        // Generate receipt data
+        const settings = departmentSettings || globalSettings;
+
+        const salePayload = {
+          department_id: selectedDepartmentId,
+        cashier_name: cashierName || "System",
+        customer_id: null,
+        payment_method: (tab.paymentMethod || "cash") as any,
+        subtotal: tabSubtotal,
+        total: tabSubtotal,
+        amount_paid: tabSubtotal,
+        change_amount: 0,
+        receipt_number: `RCP${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`,
+        sale_number: `SALE${String(Date.now()).slice(-8)}${Math.floor(Math.random() * 100)}`,
+        status: 'completed' as const,
+        created_at: new Date().toISOString(),
+        };
+
+        const {data: insertedSale, error: saleError } = await supabase
+        .from("sales")
+        .insert([salePayload])
+        .select()
+        .single();
+
+        if (saleError || !insertedSale) continue;
+
+        const itemsWithSaleId = tab.items.map((item: any) => ({
+          sale_id: insertedSale.id,
+        product_id: item.productId || null,
+        service_id: item.serviceId || null,
+        variant_id: item.variantId || null,
+        name: item.variantName ? `${item.name} - ${item.variantName}` : item.name,
+        item_name: item.variantName ? `${item.name} - ${item.variantName}` : item.name,
+        quantity: item.quantity || 1,
+        unit_price: item.price || 0,
+        total: item.subtotal || (item.price * item.quantity) || 0,
+        }));
+
+        await supabase.from("sale_items").insert(itemsWithSaleId);
+        await reduceStock(tab.items, selectedDepartmentId, isDemoMode);
+      }
+    },
+    onSuccess: () => {
+          toast.dismiss("batch-processing");
+        toast.success("All active orders completed successfully!");
+        setCartTabs([{id: 'cart-1', name: 'Order 1', items: [], customerName: '', paymentMethod: 'cash' }]);
+        setActiveCartId('cart-1');
+        setCart([]);
+        queryClient.invalidateQueries();
+    },
+    onError: (error: any) => {
+          toast.dismiss("batch-processing");
+        toast.error("Batch processing failed: " + error.message);
+    }
+  });
+
+        return (
+        <>
+          <div className="flex flex-col h-screen">
+            <Navigation />
+
+            <main className="max-w-7xl mx-auto px-4 pt-24 pb-8">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-bold">Point of Sale</h2>
+                  <p className="text-sm sm:text-base text-muted-foreground">
+                    Process sales and manage transactions
+                  </p>
+                </div>
+                {cartTabs.filter(t => t.items.length > 0).length > 1 && (
+                  <Button
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700 gap-2"
+                    onClick={() => completeAllSalesMutation.mutate()}
+                    disabled={completeAllSalesMutation.isPending}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Complete All Carts ({cartTabs.filter(t => t.items.length > 0).length})
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+                {/* Product/Service Search */}
+                <div className="lg:col-span-2 space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle>Search Products & Services</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search by name..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+                        <div className="relative flex-1">
+                          <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Scan barcode..."
+                            value={barcode}
+                            onChange={(e) => setBarcode(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === "Enter") {
+                                handleBarcodeSearch(barcode);
+                              }
+                            }}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+
+                      <Tabs defaultValue="products">
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="products">Products</TabsTrigger>
+                          <TabsTrigger value="services">Services</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="products" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
+                          {products?.map((product) => {
+                            // Calculate display price - use price field (or selling_price as fallback)
+                            const displayPrice = product.tracking_type === "ml"
+                              ? (product.retail_price_per_ml || product.wholesale_price_per_ml || 0)
+                              : (product.price || product.selling_price || 0);
+
+                            const priceLabel = product.tracking_type === "ml"
+                              ? "per ml"
+                              : "";
+
+                            // Use stock field (or current_stock as fallback)
+                            const stockValue = product.tracking_type === "ml"
+                              ? (product.total_ml || 0)
+                              : (product.stock ?? product.current_stock ?? 0);
+
+                            const stockDisplay = product.tracking_type === "ml"
+                              ? `${stockValue} ml`
+                              : stockValue;
+
+                            const isOutOfStock = stockValue <= 0 && !variantCounts[product.id];
+
+                            return (
+                              <div
+                                key={product.id}
+                                className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg transition-colors gap-2 ${isOutOfStock
+                                  ? "bg-destructive/10 border border-destructive/20 opacity-60"
+                                  : "bg-muted/30 hover:bg-muted/50"
+                                  }`}
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className={`font-medium ${isOutOfStock ? "line-through text-muted-foreground" : ""}`}>
+                                      {product.name}
+                                    </p>
+                                    {isOutOfStock && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        Out of Stock
+                                      </Badge>
+                                    )}
+                                    {variantCounts[product.id] > 0 && (
+                                      <Badge variant="default" className="text-xs">
+                                        {variantCounts[product.id]} Variants
+                                      </Badge>
+                                    )}
+                                    {product.is_bundle && (
+                                      <Badge variant="secondary" className="text-xs">Bundle</Badge>
+                                    )}
+                                    {product.allow_custom_price && (
+                                      <Badge variant="outline" className="text-xs">Custom Price</Badge>
+                                    )}
+                                    {product.tracking_type === "ml" && (
+                                      <Badge variant="outline" className="text-xs">Refill</Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {product.brand && `${product.brand} • `}
+                                    {variantCounts[product.id] > 0 ? (
+                                      <span>Click to select variant</span>
+                                    ) : (
+                                      <span className={isOutOfStock ? "text-destructive" : ""}>
+                                        Stock: {stockDisplay}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                                  <span className="font-bold">UGX {Number(displayPrice).toLocaleString()} {priceLabel}</span>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleProductClick(product)}
+                                    disabled={isOutOfStock}
+                                    variant={isOutOfStock ? "outline" : "default"}
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {(!products || products.length === 0) && (
+                            <div className="text-center py-8 text-muted-foreground">
+                              No products found
+                            </div>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="services" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
+                          {services?.map((service) => (
+                            <div
+                              key={service.id}
+                              className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors gap-2"
+                            >
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium">{service.name}</p>
+                                  {service.is_negotiable && (
+                                    <Badge variant="outline" className="text-xs">Negotiable</Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm text-muted-foreground">{service.description}</p>
+                              </div>
+                              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                                <span className="font-bold">UGX {Number(service.price || service.base_price || 0).toLocaleString()}</span>
+                                <Button size="sm" onClick={() => addToCart(service, "service")}>
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {(!services || services.length === 0) && (
+                            <div className="text-center py-8 text-muted-foreground">
+                              No services found
+                            </div>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Cart */}
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Parked Carts Panel */}
+                  <ParkedCartsPanel
+                    parkedCarts={parkedCarts}
+                    onResume={resumeParkedCart}
+                    onDelete={deleteParkedCart}
+                  />
+
+                  <Card className="sticky top-24">
+                    <CardHeader className="pb-2">
+                      {/* Cart Tabs */}
+                      <CartTabs
+                        tabs={cartTabs.map(tab => ({
+                          id: tab.id,
+                          name: tab.name,
+                          itemCount: tab.items.length
+                        }))}
+                        activeTabId={activeCartId}
+                        onTabChange={switchToCart}
+                        onNewTab={createNewCart}
+                        onCloseTab={closeCart}
                       />
-                    </div>
-                    <div className="relative flex-1">
-                      <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Scan barcode..."
-                        value={barcode}
-                        onChange={(e) => setBarcode(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === "Enter") {
-                            handleBarcodeSearch(barcode);
-                          }
-                        }}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-
-                  <Tabs defaultValue="products">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="products">Products</TabsTrigger>
-                      <TabsTrigger value="services">Services</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="products" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
-                      {products?.map((product) => {
-                        // Calculate display price - use price field (or selling_price as fallback)
-                        const displayPrice = product.tracking_type === "ml"
-                          ? (product.retail_price_per_ml || product.wholesale_price_per_ml || 0)
-                          : (product.price || product.selling_price || 0);
-
-                        const priceLabel = product.tracking_type === "ml"
-                          ? "per ml"
-                          : "";
-
-                        // Use stock field (or current_stock as fallback)
-                        const stockValue = product.tracking_type === "ml"
-                          ? (product.total_ml || 0)
-                          : (product.stock ?? product.current_stock ?? 0);
-
-                        const stockDisplay = product.tracking_type === "ml"
-                          ? `${stockValue} ml`
-                          : stockValue;
-
-                        const isOutOfStock = stockValue <= 0 && !variantCounts[product.id];
-
-                        return (
-                          <div
-                            key={product.id}
-                            className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg transition-colors gap-2 ${isOutOfStock
-                              ? "bg-destructive/10 border border-destructive/20 opacity-60"
-                              : "bg-muted/30 hover:bg-muted/50"
-                              }`}
-                          >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className={`font-medium ${isOutOfStock ? "line-through text-muted-foreground" : ""}`}>
-                                  {product.name}
-                                </p>
-                                {isOutOfStock && (
-                                  <Badge variant="destructive" className="text-xs">
-                                    Out of Stock
+                      <CardTitle className="flex items-center gap-2 mt-2">
+                        <ShoppingCart className="w-5 h-5" />
+                        Cart ({cart.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2 max-h-64 lg:max-h-80 overflow-y-auto">
+                        {cart.map((item) => (
+                          <div key={item.id} className="p-3 bg-muted/30 rounded-lg space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{item.name}</p>
+                                {item.variantName && (
+                                  <p className="text-xs text-muted-foreground">Variant: {item.variantName}</p>
+                                )}
+                                {item.trackingType === "volume" && item.volumeUnit && (
+                                  <p className="text-xs text-muted-foreground">{item.volumeUnit}</p>
+                                )}
+                                {item.scentMixture && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {item.scentMixture}
+                                  </p>
+                                )}
+                                {item.customerType && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Type: {item.customerType}
+                                  </p>
+                                )}
+                                {item.allowCustomPrice && (
+                                  <Badge variant="outline" className="text-xs mt-1">
+                                    Custom Price
                                   </Badge>
-                                )}
-                                {variantCounts[product.id] > 0 && (
-                                  <Badge variant="default" className="text-xs">
-                                    {variantCounts[product.id]} Variants
-                                  </Badge>
-                                )}
-                                {product.is_bundle && (
-                                  <Badge variant="secondary" className="text-xs">Bundle</Badge>
-                                )}
-                                {product.allow_custom_price && (
-                                  <Badge variant="outline" className="text-xs">Custom Price</Badge>
-                                )}
-                                {product.tracking_type === "ml" && (
-                                  <Badge variant="outline" className="text-xs">Refill</Badge>
                                 )}
                               </div>
-                              <p className="text-sm text-muted-foreground">
-                                {product.brand && `${product.brand} • `}
-                                {variantCounts[product.id] > 0 ? (
-                                  <span>Click to select variant</span>
-                                ) : (
-                                  <span className={isOutOfStock ? "text-destructive" : ""}>
-                                    Stock: {stockDisplay}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                              <span className="font-bold">UGX {Number(displayPrice).toLocaleString()} {priceLabel}</span>
                               <Button
                                 size="sm"
-                                onClick={() => handleProductClick(product)}
-                                disabled={isOutOfStock}
-                                variant={isOutOfStock ? "outline" : "default"}
+                                variant="ghost"
+                                onClick={() => removeFromCart(item.id)}
                               >
-                                <Plus className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
                             </div>
-                          </div>
-                        );
-                      })}
-                      {(!products || products.length === 0) && (
-                        <div className="text-center py-8 text-muted-foreground">
-                          No products found
-                        </div>
-                      )}
-                    </TabsContent>
 
-                    <TabsContent value="services" className="space-y-2 mt-4 max-h-96 overflow-y-auto">
-                      {services?.map((service) => (
-                        <div
-                          key={service.id}
-                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors gap-2"
-                        >
-                          <div className="flex-1">
+                            {item.pricingTiers && (item.pricingTiers.retail || item.pricingTiers.wholesale || item.pricingTiers.individual) && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">Price Tier</Label>
+                                <Select
+                                  value={item.selectedTier || "default"}
+                                  onValueChange={(tier) => {
+                                    let newPrice = item.price;
+                                    if (tier === "retail" && item.pricingTiers?.retail) newPrice = item.pricingTiers.retail;
+                                    if (tier === "wholesale" && item.pricingTiers?.wholesale) newPrice = item.pricingTiers.wholesale;
+                                    if (tier === "individual" && item.pricingTiers?.individual) newPrice = item.pricingTiers.individual;
+                                    setCart(cart.map((i) => i.id === item.id ? { ...i, selectedTier: tier, price: newPrice, subtotal: newPrice * i.quantity } : i));
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {item.pricingTiers.retail && (
+                                      <SelectItem value="retail">
+                                        Retail - UGX {item.pricingTiers.retail.toLocaleString()}
+                                      </SelectItem>
+                                    )}
+                                    {item.pricingTiers.wholesale && (
+                                      <SelectItem value="wholesale">
+                                        Wholesale - UGX {item.pricingTiers.wholesale.toLocaleString()}
+                                      </SelectItem>
+                                    )}
+                                    {item.pricingTiers.individual && (
+                                      <SelectItem value="individual">
+                                        Individual - UGX {item.pricingTiers.individual.toLocaleString()}
+                                      </SelectItem>
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+
                             <div className="flex items-center gap-2">
-                              <p className="font-medium">{service.name}</p>
-                              {service.is_negotiable && (
-                                <Badge variant="outline" className="text-xs">Negotiable</Badge>
+                              <div className="flex-1">
+                                <Label className="text-xs">
+                                  {item.trackingType === "milliliter" ? "ml" : "Qty"}
+                                </Label>
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => updateQuantity(item.id, Number(e.target.value))}
+                                  className="h-8 text-sm"
+                                  min="1"
+                                  step={item.trackingType === "volume" || item.trackingType === "milliliter" ? "1" : "1"}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <Label className="text-xs">Price</Label>
+                                <Input
+                                  type="number"
+                                  value={item.price}
+                                  onChange={(e) => updatePrice(item.id, Number(e.target.value))}
+                                  className="h-8 text-sm"
+                                  disabled={!item.allowCustomPrice && !isAdmin}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-bold">
+                                UGX {item.subtotal.toLocaleString()}
+                              </p>
+                              {item.minPrice && item.maxPrice && (
+                                <p className="text-xs text-muted-foreground">
+                                  Range: {item.minPrice}-{item.maxPrice}
+                                </p>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground">{service.description}</p>
                           </div>
-                          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                            <span className="font-bold">UGX {Number(service.price || service.base_price || 0).toLocaleString()}</span>
-                            <Button size="sm" onClick={() => addToCart(service, "service")}>
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      {(!services || services.length === 0) && (
-                        <div className="text-center py-8 text-muted-foreground">
-                          No services found
-                        </div>
-                      )}
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Cart */}
-            <div className="lg:col-span-1 space-y-4">
-              {/* Parked Carts Panel */}
-              <ParkedCartsPanel
-                parkedCarts={parkedCarts}
-                onResume={resumeParkedCart}
-                onDelete={deleteParkedCart}
-              />
-
-              <Card className="sticky top-24">
-                <CardHeader className="pb-2">
-                  {/* Cart Tabs */}
-                  <CartTabs
-                    tabs={cartTabs.map(tab => ({
-                      id: tab.id,
-                      name: tab.name,
-                      itemCount: tab.items.length
-                    }))}
-                    activeTabId={activeCartId}
-                    onTabChange={switchToCart}
-                    onNewTab={createNewCart}
-                    onCloseTab={closeCart}
-                  />
-                  <CardTitle className="flex items-center gap-2 mt-2">
-                    <ShoppingCart className="w-5 h-5" />
-                    Cart ({cart.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2 max-h-64 lg:max-h-80 overflow-y-auto">
-                    {cart.map((item) => (
-                      <div key={item.id} className="p-3 bg-muted/30 rounded-lg space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{item.name}</p>
-                            {item.variantName && (
-                              <p className="text-xs text-muted-foreground">Variant: {item.variantName}</p>
-                            )}
-                            {item.trackingType === "volume" && item.volumeUnit && (
-                              <p className="text-xs text-muted-foreground">{item.volumeUnit}</p>
-                            )}
-                            {item.scentMixture && (
-                              <p className="text-xs text-muted-foreground">
-                                {item.scentMixture}
-                              </p>
-                            )}
-                            {item.customerType && (
-                              <p className="text-xs text-muted-foreground">
-                                Type: {item.customerType}
-                              </p>
-                            )}
-                            {item.allowCustomPrice && (
-                              <Badge variant="outline" className="text-xs mt-1">
-                                Custom Price
-                              </Badge>
-                            )}
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removeFromCart(item.id)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-
-                        {item.pricingTiers && (item.pricingTiers.retail || item.pricingTiers.wholesale || item.pricingTiers.individual) && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Price Tier</Label>
-                            <Select
-                              value={item.selectedTier || "default"}
-                              onValueChange={(tier) => {
-                                let newPrice = item.price;
-                                if (tier === "retail" && item.pricingTiers?.retail) newPrice = item.pricingTiers.retail;
-                                if (tier === "wholesale" && item.pricingTiers?.wholesale) newPrice = item.pricingTiers.wholesale;
-                                if (tier === "individual" && item.pricingTiers?.individual) newPrice = item.pricingTiers.individual;
-                                setCart(cart.map((i) => i.id === item.id ? { ...i, selectedTier: tier, price: newPrice, subtotal: newPrice * i.quantity } : i));
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {item.pricingTiers.retail && (
-                                  <SelectItem value="retail">
-                                    Retail - UGX {item.pricingTiers.retail.toLocaleString()}
-                                  </SelectItem>
-                                )}
-                                {item.pricingTiers.wholesale && (
-                                  <SelectItem value="wholesale">
-                                    Wholesale - UGX {item.pricingTiers.wholesale.toLocaleString()}
-                                  </SelectItem>
-                                )}
-                                {item.pricingTiers.individual && (
-                                  <SelectItem value="individual">
-                                    Individual - UGX {item.pricingTiers.individual.toLocaleString()}
-                                  </SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
+                        ))}
+                        {cart.length === 0 && (
+                          <div className="text-center py-8 text-muted-foreground">
+                            Cart is empty. Add items to begin.
                           </div>
                         )}
+                      </div>
 
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <Label className="text-xs">
-                              {item.trackingType === "milliliter" ? "ml" : "Qty"}
-                            </Label>
-                            <Input
-                              type="number"
-                              value={item.quantity}
-                              onChange={(e) => updateQuantity(item.id, Number(e.target.value))}
-                              className="h-8 text-sm"
-                              min="1"
-                              step={item.trackingType === "volume" || item.trackingType === "milliliter" ? "1" : "1"}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <Label className="text-xs">Price</Label>
-                            <Input
-                              type="number"
-                              value={item.price}
-                              onChange={(e) => updatePrice(item.id, Number(e.target.value))}
-                              className="h-8 text-sm"
-                              disabled={!item.allowCustomPrice && !isAdmin}
-                            />
-                          </div>
+                      {/* Park Cart Button */}
+                      {cart.length > 0 && (
+                        <div className="pt-2">
+                          <Button
+                            variant="outline"
+                            className="w-full gap-2"
+                            onClick={() => setShowParkDialog(true)}
+                          >
+                            <PauseCircle className="w-4 h-4" />
+                            Park Order (Hold for Later)
+                          </Button>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-bold">
-                            UGX {item.subtotal.toLocaleString()}
+                      )}
+
+                      <div className="border-t pt-4 space-y-3">
+                        <div className="flex justify-between text-base sm:text-lg font-bold">
+                          <span>Total:</span>
+                          <span>UGX {subtotal.toLocaleString()}</span>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Customer Name (Optional)</Label>
+                          <Input
+                            type="text"
+                            placeholder="Walk-in Customer"
+                            value={customerName}
+                            onChange={(e) => setCustomerName(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Leave empty for "Walk-in Customer" or enter customer name
                           </p>
-                          {item.minPrice && item.maxPrice && (
-                            <p className="text-xs text-muted-foreground">
-                              Range: {item.minPrice}-{item.maxPrice}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <CalendarIcon className="w-4 h-4" />
+                            Sale Date
+                          </Label>
+                          <Input
+                            type="date"
+                            value={saleDate}
+                            onChange={(e) => setSaleDate(e.target.value)}
+                            max={new Date().toISOString().split('T')[0]}
+                          />
+                          {saleDate !== new Date().toISOString().split('T')[0] && (
+                            <p className="text-xs text-orange-600 dark:text-orange-400">
+                              ⚠️ Recording sale for a past date: {new Date(saleDate).toLocaleDateString()}
                             </p>
                           )}
                         </div>
+
+                        <div className="space-y-2">
+                          <Label>Payment Method</Label>
+                          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">Cash</SelectItem>
+                              <SelectItem value="card">Card</SelectItem>
+                              <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                              <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Cashier Name (Optional)</Label>
+                          <Input
+                            value={cashierName}
+                            onChange={(e) => setCashierName(e.target.value)}
+                            placeholder="Enter cashier name"
+                          />
+                        </div>
+
+                        <Button
+                          className="w-full"
+                          size="lg"
+                          onClick={() => completeSaleMutation.mutate()}
+                          disabled={cart.length === 0 || !paymentMethod || completeSaleMutation.isPending}
+                        >
+                          {completeSaleMutation.isPending ? "Processing..." : "Complete Sale"}
+                        </Button>
                       </div>
-                    ))}
-                    {cart.length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        Cart is empty. Add items to begin.
-                      </div>
-                    )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </main>
+
+            <ReceiptActionsDialog
+              isOpen={showReceiptDialog}
+              onClose={() => setShowReceiptDialog(false)}
+              receiptData={currentReceiptData}
+              customerPhone={null}
+              isInvoice={currentReceiptData?.invoiceNumber ? true : false}
+            />
+
+            <MobileMoneyDialog
+              open={showMobileMoneyDialog}
+              onOpenChange={setShowMobileMoneyDialog}
+              amount={subtotal}
+              departmentId={selectedDepartmentId}
+              saleId={completedSaleId}
+              onSuccess={() => {
+                // After successful payment
+                setCurrentReceiptData({
+                  id: completedSaleId,
+                  subtotal: subtotal,
+                  total: total,
+                  payment_method: "mobile_money",
+                });
+                setShowReceiptDialog(true);
+                setCart([]);
+                setCustomerName("");
+                setPaymentMethod("cash");
+                setShowMobileMoneyDialog(false);
+                setCompletedSaleId(null);
+
+                // Reset the active cart tab
+                setCartTabs(prev => prev.map(tab =>
+                  tab.id === activeCartId
+                    ? { ...tab, items: [], customerName: '', paymentMethod: 'cash' }
+                    : tab
+                ));
+
+                queryClient.invalidateQueries();
+              }}
+            />
+
+            <VariantSelectorDialog
+              open={showVariantSelector}
+              onOpenChange={setShowVariantSelector}
+              productName={selectedProductForVariant?.name || ""}
+              basePrice={selectedProductForVariant?.selling_price || 0}
+              variants={productVariants as any[]}
+              onSelectVariant={handleVariantSelect}
+            />
+
+            {/* Park Cart Dialog */}
+            <Dialog open={showParkDialog} onOpenChange={setShowParkDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <PauseCircle className="w-5 h-5" />
+                    Park Order
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Parking this order will save it for later. You can resume it anytime.
+                  </p>
+                  <div className="space-y-2">
+                    <Label>Reason (Optional)</Label>
+                    <Input
+                      placeholder="e.g., Customer went to get more cash"
+                      value={parkReason}
+                      onChange={(e) => setParkReason(e.target.value)}
+                    />
                   </div>
-
-                  {/* Park Cart Button */}
-                  {cart.length > 0 && (
-                    <div className="pt-2">
-                      <Button
-                        variant="outline"
-                        className="w-full gap-2"
-                        onClick={() => setShowParkDialog(true)}
-                      >
-                        <PauseCircle className="w-4 h-4" />
-                        Park Order (Hold for Later)
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="border-t pt-4 space-y-3">
-                    <div className="flex justify-between text-base sm:text-lg font-bold">
-                      <span>Total:</span>
-                      <span>UGX {subtotal.toLocaleString()}</span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Customer Name (Optional)</Label>
-                      <Input
-                        type="text"
-                        placeholder="Walk-in Customer"
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Leave empty for "Walk-in Customer" or enter customer name
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <CalendarIcon className="w-4 h-4" />
-                        Sale Date
-                      </Label>
-                      <Input
-                        type="date"
-                        value={saleDate}
-                        onChange={(e) => setSaleDate(e.target.value)}
-                        max={new Date().toISOString().split('T')[0]}
-                      />
-                      {saleDate !== new Date().toISOString().split('T')[0] && (
-                        <p className="text-xs text-orange-600 dark:text-orange-400">
-                          ⚠️ Recording sale for a past date: {new Date(saleDate).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Payment Method</Label>
-                      <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="cash">Cash</SelectItem>
-                          <SelectItem value="card">Card</SelectItem>
-                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                          <SelectItem value="mobile_money">Mobile Money</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Cashier Name (Optional)</Label>
-                      <Input
-                        value={cashierName}
-                        onChange={(e) => setCashierName(e.target.value)}
-                        placeholder="Enter cashier name"
-                      />
-                    </div>
-
-                    <Button
-                      className="w-full"
-                      size="lg"
-                      onClick={() => completeSaleMutation.mutate()}
-                      disabled={cart.length === 0 || !paymentMethod || completeSaleMutation.isPending}
-                    >
-                      {completeSaleMutation.isPending ? "Processing..." : "Complete Sale"}
-                    </Button>
+                  <div className="bg-muted/50 p-3 rounded-lg">
+                    <p className="text-sm font-medium">Order Summary:</p>
+                    <p className="text-sm text-muted-foreground">
+                      {cart.length} items • UGX {subtotal.toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Customer: {customerName || "Walk-in"}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowParkDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={parkCurrentCart} className="gap-2">
+                    <PauseCircle className="w-4 h-4" />
+                    Park Order
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
-        </main>
-
-        <ReceiptActionsDialog
-          isOpen={showReceiptDialog}
-          onClose={() => setShowReceiptDialog(false)}
-          receiptData={currentReceiptData}
-          customerPhone={null}
-          isInvoice={currentReceiptData?.invoiceNumber ? true : false}
-        />
-
-        <MobileMoneyDialog
-          open={showMobileMoneyDialog}
-          onOpenChange={setShowMobileMoneyDialog}
-          amount={subtotal}
-          departmentId={selectedDepartmentId}
-          saleId={completedSaleId}
-          onSuccess={() => {
-            // After successful payment
-            setCurrentReceiptData({
-              id: completedSaleId,
-              subtotal: subtotal,
-              total: total,
-              payment_method: "mobile_money",
-            });
-            setShowReceiptDialog(true);
-            setCart([]);
-            setCustomerName("");
-            setPaymentMethod("cash");
-            setShowMobileMoneyDialog(false);
-            setCompletedSaleId(null);
-
-            // Reset the active cart tab
-            setCartTabs(prev => prev.map(tab =>
-              tab.id === activeCartId
-                ? { ...tab, items: [], customerName: '', paymentMethod: 'cash' }
-                : tab
-            ));
-
-            queryClient.invalidateQueries();
-          }}
-        />
-
-        <VariantSelectorDialog
-          open={showVariantSelector}
-          onOpenChange={setShowVariantSelector}
-          productName={selectedProductForVariant?.name || ""}
-          basePrice={selectedProductForVariant?.selling_price || 0}
-          variants={productVariants as any[]}
-          onSelectVariant={handleVariantSelect}
-        />
-
-        {/* Park Cart Dialog */}
-        <Dialog open={showParkDialog} onOpenChange={setShowParkDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <PauseCircle className="w-5 h-5" />
-                Park Order
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <p className="text-sm text-muted-foreground">
-                Parking this order will save it for later. You can resume it anytime.
-              </p>
-              <div className="space-y-2">
-                <Label>Reason (Optional)</Label>
-                <Input
-                  placeholder="e.g., Customer went to get more cash"
-                  value={parkReason}
-                  onChange={(e) => setParkReason(e.target.value)}
-                />
-              </div>
-              <div className="bg-muted/50 p-3 rounded-lg">
-                <p className="text-sm font-medium">Order Summary:</p>
-                <p className="text-sm text-muted-foreground">
-                  {cart.length} items • UGX {subtotal.toLocaleString()}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Customer: {customerName || "Walk-in"}
-                </p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowParkDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={parkCurrentCart} className="gap-2">
-                <PauseCircle className="w-4 h-4" />
-                Park Order
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </>
-  );
+        </>
+        );
 };
 
-export default Sales;
+        export default Sales;

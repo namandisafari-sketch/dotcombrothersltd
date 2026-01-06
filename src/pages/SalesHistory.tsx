@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Printer, Calendar, Ban, Smartphone, Edit } from "lucide-react";
+import { Search, Eye, Printer, Calendar, Ban, Smartphone, Edit, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,19 +43,19 @@ const SalesHistory = () => {
     queryKey: ["sales-history", searchQuery, startDate, endDate, selectedDepartmentId],
     queryFn: async () => {
       if (!selectedDepartmentId) return [];
-      
+
       let query = supabase
         .from("sales")
         .select("*")
         .eq("department_id", selectedDepartmentId)
         .order("created_at", { ascending: false });
-      
+
       if (startDate) query = query.gte("created_at", startDate);
       if (endDate) query = query.lte("created_at", endDate + "T23:59:59");
-      
+
       const { data: salesData } = await query;
       if (!salesData) return [];
-      
+
       // Fetch sale items for each sale
       const salesWithItems = await Promise.all(
         salesData.map(async (sale: any) => {
@@ -66,15 +66,15 @@ const SalesHistory = () => {
           return { ...sale, sale_items: items || [] };
         })
       );
-      
+
       // Filter by search query if provided
       if (searchQuery) {
-        return salesWithItems.filter((sale: any) => 
+        return salesWithItems.filter((sale: any) =>
           sale.receipt_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           sale.cashier_name?.toLowerCase().includes(searchQuery.toLowerCase())
         );
       }
-      
+
       return salesWithItems;
     },
     enabled: !!selectedDepartmentId,
@@ -107,35 +107,35 @@ const SalesHistory = () => {
     };
   }, [selectedDepartmentId, queryClient]);
 
-  const voidMutation = useMutation({
-    mutationFn: async ({ saleId, reason }: { saleId: string; reason: string }) => {
-      if (!user) throw new Error("No user found");
-      const { error } = await supabase
+  const purgeSalesMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDepartmentId) throw new Error("No department selected");
+
+      // Delete sale items first (though CASCADE should handle it, explicit is safer sometimes)
+      const { data: salesToDelete } = await supabase
         .from("sales")
-        .update({ status: "voided", void_reason: reason, voided_by: user.id, voided_at: new Date().toISOString() })
-        .eq("id", saleId);
-      if (error) throw error;
+        .select("id")
+        .eq("department_id", selectedDepartmentId);
+
+      if (salesToDelete && salesToDelete.length > 0) {
+        const saleIds = salesToDelete.map(s => s.id);
+        await supabase.from("sale_items").delete().in("sale_id", saleIds);
+        const { error } = await supabase.from("sales").delete().in("id", saleIds);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
-      toast.success("Sale voided successfully");
+      toast.success("All sales data for this department has been cleared");
       queryClient.invalidateQueries({ queryKey: ["sales-history"] });
-      setShowVoidDialog(false);
-      setSaleToVoid(null);
-      setVoidReason("");
+      setShowPurgeDialog(false);
     },
     onError: (error: any) => {
-      toast.error(error.message || "Failed to void sale");
-    },
+      toast.error("Failed to purge sales data: " + error.message);
+    }
   });
 
-  const handleVoidClick = (sale: any) => {
-    if (sale.status === "voided") {
-      toast.error("This sale has already been voided");
-      return;
-    }
-    setSaleToVoid(sale);
-    setShowVoidDialog(true);
-  };
+  const [showPurgeDialog, setShowPurgeDialog] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState("");
 
   const handleConfirmVoid = () => {
     if (!voidReason.trim()) {
@@ -143,7 +143,7 @@ const SalesHistory = () => {
       return;
     }
     if (!saleToVoid) return;
-    
+
     voidMutation.mutate({
       saleId: saleToVoid.id,
       reason: voidReason.trim(),
@@ -270,9 +270,22 @@ const SalesHistory = () => {
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8">
       <main className="max-w-7xl mx-auto space-y-6">
-        <div className="mb-6">
-          <h2 className="text-2xl sm:text-3xl font-bold">Sales History</h2>
-          <p className="text-sm sm:text-base text-muted-foreground">View and reprint previous receipts</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold">Sales History</h2>
+            <p className="text-sm sm:text-base text-muted-foreground">View and reprint previous receipts</p>
+          </div>
+          {isAdmin && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowPurgeDialog(true)}
+              className="gap-2"
+            >
+              <Ban className="h-4 w-4" />
+              Purge All Sales
+            </Button>
+          )}
         </div>
 
         <Card className="mb-6">
@@ -514,7 +527,7 @@ const SalesHistory = () => {
                 Voiding this sale will restore all items to stock and exclude it from revenue calculations.
               </p>
             </div>
-            
+
             {saleToVoid && (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -531,7 +544,7 @@ const SalesHistory = () => {
                 </div>
               </div>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="void-reason">Reason for Voiding *</Label>
               <Textarea
@@ -596,6 +609,42 @@ const SalesHistory = () => {
         }}
         receiptData={saleToEdit}
       />
+      {/* Purge Data Dialog */}
+      <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              DANGER: Purge All Sales Data
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete ALL sales and reports for the currently selected department. This action CANNOT be undone.
+            </p>
+            <div className="space-y-2">
+              <Label>Type "DELETE ALL" to confirm</Label>
+              <Input
+                placeholder="DELETE ALL"
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPurgeDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={purgeConfirmText !== "DELETE ALL" || purgeSalesMutation.isPending}
+              onClick={() => purgeSalesMutation.mutate()}
+            >
+              {purgeSalesMutation.isPending ? "Purging..." : "Confirm Purge"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
