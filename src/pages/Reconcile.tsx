@@ -65,7 +65,25 @@ const Reconcile = () => {
         department_id: departmentId,
         status: discrepancy === 0 ? "completed" : "pending",
       });
+
       if (error) throw error;
+
+      // If there's a surplus, also create a suspended revenue entry
+      if (discrepancy > 0) {
+        const { error: suspendedError } = await supabase.from("suspended_revenue").insert({
+          cashier_name: data.cashier_name,
+          date: data.date,
+          amount: discrepancy,
+          reason: `Surplus from reconciliation on ${data.date}`,
+          department_id: departmentId,
+          status: "pending",
+        });
+        if (suspendedError) {
+          console.error("Failed to create suspended revenue:", suspendedError);
+          // Don't throw here to avoid failing the whole reconciliation if just the surplus record fails
+          toast.warning("Reconciliation saved, but failed to record surplus in suspended revenue.");
+        }
+      }
     },
     onSuccess: () => {
       toast.success("Reconciliation recorded successfully");
@@ -85,7 +103,7 @@ const Reconcile = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.cashier_name || !formData.reported_cash) {
       toast.error("Please fill in all required fields");
       return;
@@ -171,13 +189,12 @@ const Reconcile = () => {
                 {formData.reported_cash && !loadingSales && (
                   <div className="p-3 bg-muted rounded-lg">
                     <p className="text-sm font-medium">Difference:</p>
-                    <p className={`text-2xl font-bold ${
-                      difference === 0
+                    <p className={`text-2xl font-bold ${difference === 0
                         ? "text-success"
                         : difference > 0
-                        ? "text-warning"
-                        : "text-destructive"
-                    }`}>
+                          ? "text-warning"
+                          : "text-destructive"
+                      }`}>
                       {difference.toLocaleString()} UGX
                     </p>
                     {difference > 0 && (

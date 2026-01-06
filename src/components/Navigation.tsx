@@ -64,7 +64,7 @@ const Navigation = () => {
 
   // Define all possible navigation items with department restrictions
   const allNavItems: NavItem[] = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard", adminOnly: true },
+    { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard", adminOnly: true },
     { path: "/appointments", icon: Calendar, label: "Appointments", departments: ["general"] },
     { path: "/sales", icon: ShoppingCart, label: "Sales", departments: ["general"] },
     { path: "/sales-history", icon: History, label: "Sales History", departments: ["general"] },
@@ -76,6 +76,7 @@ const Navigation = () => {
     { path: "/reconcile", icon: Calculator, label: "Reconcile", departments: ["general"] },
     { path: "/internal-usage", icon: Package2, label: "Internal Usage", departments: ["general", "mobile money", "perfume"] },
     { path: "/expenses", icon: Receipt, label: "Expenses", departments: ["general"] },
+    { path: "/suspended-revenue", icon: AlertTriangle, label: "Suspended Revenue", departments: ["general", "perfume", "mobile money"] },
     { path: "/mobile-money", icon: Smartphone, label: "Mobile Money", departments: ["mobile money"] },
     { path: "/analytics", icon: BarChart, label: "Analytics", adminOnly: true },
     { path: "/perfume-dashboard", icon: LayoutDashboard, label: "My Shop", departments: ["perfume"] },
@@ -83,41 +84,42 @@ const Navigation = () => {
     { path: "/perfume-inventory", icon: Droplet, label: "Perfume Inventory", departments: ["perfume"] },
     { path: "/perfume-revenue", icon: TrendingUp, label: "Perfume Revenue", departments: ["perfume"] },
     { path: "/scent-popularity", icon: BarChart3, label: "Scent Tracker", departments: ["perfume"] },
-    { path: "/reports", icon: FileText, label: "Reports", departments: ["general"] },
+    { path: "/reports", icon: FileText, label: "Reports", departments: ["general", "perfume", "mobile money"] },
     { path: "/settings", icon: Settings, label: "Settings", departments: ["general", "mobile money", "perfume"] },
   ];
 
   // Admin-only items
   const adminItems: NavItem[] = [
     { path: "/admin-reports", icon: Shield, label: "Admin Reports", adminOnly: true },
-    { path: "/staff", icon: UserCog, label: "Staff Mgmt", adminOnly: true },
+    { path: "/staff-management", icon: UserCog, label: "Staff Mgmt", adminOnly: true },
     { path: "/scent-manager", icon: Sparkles, label: "Scent Manager", adminOnly: true },
   ];
 
   // Filter navigation items based on user role, department, and permissions
-  const navItems = [...allNavItems, ...(isAdmin ? adminItems : [])].filter(item => {
+  const navItems = [...allNavItems, ...adminItems].filter(item => {
     // Admins see everything
     if (isAdmin) return true;
 
-    // Filter out admin-only items
+    // Check if user has explicit permission for this nav item
+    // This allows non-admins to access specific pages if explicitly assigned
+    if (userNavPermissions && (userNavPermissions.includes(item.path) || (item.path === '/dashboard' && userNavPermissions.includes('/')))) {
+      return true;
+    }
+
+    // Filter out admin-only items if no explicit permission
     if (item.adminOnly) return false;
 
     // If user has no department assigned, show nothing (they need to be assigned)
     if (!departmentId) return false;
 
-    // Check if user has explicit permission for this nav item
-    if (userNavPermissions && userNavPermissions.length > 0) {
-      return userNavPermissions.includes(item.path);
-    }
-
-    // Fallback to department-based filtering if no permissions set
+    // Fallback to department-based filtering
     if (!item.departments) return true; // Allow access if no department restriction
     return item.departments.includes(departmentName);
   });
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-card border-b shadow-sm">
-      
+
     </nav>
   );
 };
