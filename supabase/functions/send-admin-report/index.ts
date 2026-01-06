@@ -32,28 +32,32 @@ interface DepartmentFinancials {
 function shouldSendScheduledReport(
   frequency: string,
   configuredTime: string, // Format: "HH:MM" (e.g., "08:00")
-  lastSentAt: string | null
+  lastSentAt: string | null,
+  timezoneOffset: number = 3 // Default to UTC+3 for Uganda
 ): { shouldSend: boolean; period: string; reason: string } {
   const now = new Date();
-  const currentHour = now.getUTCHours();
-  const currentMinute = now.getUTCMinutes();
-  const currentDay = now.getUTCDay(); // 0 = Sunday
-  const currentDate = now.getUTCDate();
+
+  // Calculate current time in the target timezone
+  const localTime = new Date(now.getTime() + (timezoneOffset * 60 * 60 * 1000));
+  const currentHour = localTime.getUTCHours();
+  const currentMinute = localTime.getUTCMinutes();
+  const currentDay = localTime.getUTCDay(); // 0 = Sunday
+  const currentDate = localTime.getUTCDate();
 
   // Parse configured time (default to 08:00 if invalid)
   const [configHourStr, configMinStr] = (configuredTime || "08:00").split(":");
   const configHour = parseInt(configHourStr, 10) || 8;
   const configMin = parseInt(configMinStr, 10) || 0;
 
-  // Check if current hour matches configured hour (with 1-hour window for cron timing)
-  const isCorrectHour = currentHour === configHour ||
-    (currentHour === configHour + 1 && currentMinute < 30); // Allow 30 min buffer
+  // Check if current hour matches configured hour
+  // We allow a window to ensure the cron job (which runs every 30m) catches it
+  const isCorrectHour = currentHour === configHour;
 
   if (!isCorrectHour) {
     return {
       shouldSend: false,
       period: "current",
-      reason: `Not the scheduled time. Current: ${currentHour}:${currentMinute} UTC, Configured: ${configHour}:${configMin} UTC`
+      reason: `Not the scheduled hour. Current local: ${currentHour}:${currentMinute}, Configured: ${configHour}:${configMin}`
     };
   }
 
@@ -150,8 +154,9 @@ const handler = async (req: Request): Promise<Response> => {
       const frequency = settings?.report_email_frequency || "daily";
       const configuredTime = settings?.report_email_time || "08:00";
       const lastSentAt = settings?.settings_json?.last_report_sent_at || null;
+      const timezoneOffset = settings?.settings_json?.timezone_offset ?? 3;
 
-      const { shouldSend, period, reason } = shouldSendScheduledReport(frequency, configuredTime, lastSentAt);
+      const { shouldSend, period, reason } = shouldSendScheduledReport(frequency, configuredTime, lastSentAt, timezoneOffset);
 
       if (!shouldSend) {
         console.log(`Scheduled report check: ${reason}`);

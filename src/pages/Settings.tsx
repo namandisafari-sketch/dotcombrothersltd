@@ -39,6 +39,7 @@ const Settings = () => {
     report_email_time: "08:00",
     report_email_frequency: "daily",
     admin_report_email: "",
+    timezone_offset: 3,
   });
   const [isSendingTestReport, setIsSendingTestReport] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
@@ -97,6 +98,7 @@ const Settings = () => {
         report_email_time: (settings as any).report_email_time || "08:00",
         report_email_frequency: (settings as any).report_email_frequency || "daily",
         admin_report_email: (settings as any).admin_report_email || "",
+        timezone_offset: (settings as any).settings_json?.timezone_offset ?? 3,
       });
     } else if (selectedDepartmentId && selectedDepartmentId !== "global" && !departmentSettings) {
       setFormData({
@@ -114,6 +116,7 @@ const Settings = () => {
         report_email_time: "08:00",
         report_email_frequency: "daily",
         admin_report_email: "",
+        timezone_offset: 3,
       });
     }
   }, [selectedDepartmentId, departmentSettings, globalSettings]);
@@ -122,7 +125,7 @@ const Settings = () => {
     if (formData.whatsapp_number) {
       const message = "Hello! I'd like to connect with Dotcom Brothers Ltd.";
       const whatsappUrl = `https://wa.me/${formData.whatsapp_number.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
-      
+
       QRCode.toDataURL(whatsappUrl, { width: 200 })
         .then(setQrCodeUrl)
         .catch(() => toast.error("Failed to generate QR code"));
@@ -131,22 +134,31 @@ const Settings = () => {
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      const { timezone_offset, ...rest } = data;
+      const settingsPayload = {
+        ...rest,
+        settings_json: {
+          ...(globalSettings?.settings_json as any || {}),
+          timezone_offset: timezone_offset
+        }
+      };
+
       if (selectedDepartmentId && selectedDepartmentId !== "global") {
         const { data: existing } = await supabase.from("settings").select("id").eq("department_id", selectedDepartmentId).maybeSingle();
         if (existing) {
-          const { error } = await supabase.from("settings").update(data).eq("department_id", selectedDepartmentId);
+          const { error } = await supabase.from("settings").update(settingsPayload).eq("department_id", selectedDepartmentId);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from("settings").insert({ ...data, department_id: selectedDepartmentId });
+          const { error } = await supabase.from("settings").insert({ ...settingsPayload, department_id: selectedDepartmentId });
           if (error) throw error;
         }
       } else {
         const { data: existing } = await supabase.from("settings").select("id").is("department_id", null).maybeSingle();
         if (existing) {
-          const { error } = await supabase.from("settings").update(data).is("department_id", null);
+          const { error } = await supabase.from("settings").update(settingsPayload).is("department_id", null);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from("settings").insert(data);
+          const { error } = await supabase.from("settings").insert(settingsPayload);
           if (error) throw error;
         }
       }
@@ -185,7 +197,7 @@ const Settings = () => {
           <h2 className="text-2xl sm:text-3xl font-bold">Settings</h2>
           <p className="text-sm sm:text-base text-muted-foreground">
             {selectedDepartmentId && selectedDepartmentId !== "global"
-              ? "Set up department-specific business info for receipts" 
+              ? "Set up department-specific business info for receipts"
               : "Set up global business info"}
           </p>
         </div>
@@ -366,17 +378,17 @@ const Settings = () => {
                             try {
                               const fileExt = file.name.split('.').pop();
                               const fileName = `logo_${Date.now()}.${fileExt}`;
-                              
+
                               const { error: uploadError } = await supabase.storage
                                 .from('department-logos')
                                 .upload(fileName, file, { upsert: true });
-                              
+
                               if (uploadError) throw uploadError;
-                              
+
                               const { data: urlData } = supabase.storage
                                 .from('department-logos')
                                 .getPublicUrl(fileName);
-                              
+
                               setFormData(prev => ({
                                 ...prev,
                                 logo_url: urlData.publicUrl,
@@ -434,17 +446,17 @@ const Settings = () => {
                             try {
                               const fileExt = file.name.split('.').pop();
                               const fileName = `receipt_logo_${Date.now()}.${fileExt}`;
-                              
+
                               const { error: uploadError } = await supabase.storage
                                 .from('department-logos')
                                 .upload(fileName, file, { upsert: true });
-                              
+
                               if (uploadError) throw uploadError;
-                              
+
                               const { data: urlData } = supabase.storage
                                 .from('department-logos')
                                 .getPublicUrl(fileName);
-                              
+
                               setFormData(prev => ({
                                 ...prev,
                                 receipt_logo_url: urlData.publicUrl,
@@ -514,7 +526,7 @@ const Settings = () => {
                       <p className="text-sm text-muted-foreground">
                         Receive daily or weekly reports of all departments via email.
                       </p>
-                      
+
                       <div className="space-y-2">
                         <Label>Admin Report Email</Label>
                         <Input
@@ -599,8 +611,8 @@ const Settings = () => {
 
                             <div className="space-y-2">
                               <Label>Report Frequency</Label>
-                              <Select 
-                                value={formData.report_email_frequency} 
+                              <Select
+                                value={formData.report_email_frequency}
                                 onValueChange={(value) =>
                                   setFormData({ ...formData, report_email_frequency: value })
                                 }
@@ -613,6 +625,32 @@ const Settings = () => {
                                   <SelectItem value="weekly">Weekly (Monday)</SelectItem>
                                 </SelectContent>
                               </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Timezone Offset (UTC)</Label>
+                              <div className="flex items-center gap-2">
+                                <Select
+                                  value={formData.timezone_offset.toString()}
+                                  onValueChange={(value) =>
+                                    setFormData({ ...formData, timezone_offset: parseInt(value) })
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Array.from({ length: 25 }, (_, i) => i - 12).map((offset) => (
+                                      <SelectItem key={offset} value={offset.toString()}>
+                                        UTC {offset >= 0 ? "+" : ""}{offset}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                  (Uganda is UTC +3)
+                                </p>
+                              </div>
                             </div>
                           </>
                         )}
@@ -645,7 +683,7 @@ const Settings = () => {
                   </Card>
                 )}
 
-                <ReceiptPreview 
+                <ReceiptPreview
                   businessInfo={{
                     name: formData.business_name,
                     address: formData.business_address,
