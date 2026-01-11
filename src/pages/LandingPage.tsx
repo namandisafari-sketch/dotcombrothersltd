@@ -407,9 +407,9 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { icon: Phone, title: "Call Us", value: settings?.business_phone || "+256 745 368 426", color: "from-green-500 to-emerald-500" },
-              { icon: Mail, title: "Email", value: settings?.business_email || "info@dotcombrothers.com", color: "from-blue-500 to-cyan-500" },
-              { icon: MapPin, title: "Location", value: "Opp. Kasangati Police Station", color: "from-orange-500 to-amber-500" },
+              { icon: Phone, title: "Call Us", value: contactContent?.phone || settings?.business_phone || "+256 745 368 426", color: "from-green-500 to-emerald-500" },
+              { icon: Mail, title: "Email", value: contactContent?.email || settings?.business_email || "info@dotcombrothers.com", color: "from-blue-500 to-cyan-500" },
+              { icon: MapPin, title: "Location", value: contactContent?.address || "Opp. Kasangati Police Station", color: "from-orange-500 to-amber-500" },
             ].map((contact, index) => (
               <Card
                 key={contact.title}
@@ -479,9 +479,9 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold mb-6 text-lg">Contact</h4>
               <ul className="space-y-3 text-muted-foreground">
-                <li>{settings?.business_phone || "+256 745 368 426"}</li>
-                <li>{settings?.business_email || "info@dotcombrothers.com"}</li>
-                <li>Kasangati</li>
+                <li>{contactContent?.phone || settings?.business_phone || "+256 745 368 426"}</li>
+                <li>{contactContent?.email || settings?.business_email || "info@dotcombrothers.com"}</li>
+                <li>{contactContent?.address || "Kasangati"}</li>
               </ul>
             </div>
           </div>

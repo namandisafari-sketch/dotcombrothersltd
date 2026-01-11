@@ -60,6 +60,9 @@ const defaultAboutContent = {
 const defaultContactContent = {
   title: "Visit Us Today",
   subtitle: "We are ready to serve you!",
+  phone: "+256 745 368 426",
+  email: "info@dotcombrothers.com",
+  address: "Opp. Kasangati Police Station",
   cta_text: "Sign In to Dashboard",
   whatsapp_text: "Chat on WhatsApp",
   whatsapp_number: "256745368426",
@@ -648,6 +651,32 @@ export default function LandingPageEditor() {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Phone Number</Label>
+                    <Input
+                      value={contactContent.phone}
+                      onChange={(e) => setContactContent({ ...contactContent, phone: e.target.value })}
+                      placeholder="+256 745 368 426"
+                    />
+                  </div>
+                  <div>
+                    <Label>Email Address</Label>
+                    <Input
+                      value={contactContent.email}
+                      onChange={(e) => setContactContent({ ...contactContent, email: e.target.value })}
+                      placeholder="info@dotcombrothers.com"
+                    />
+                  </div>
+                  <div>
+                    <Label>Physical Address</Label>
+                    <Input
+                      value={contactContent.address}
+                      onChange={(e) => setContactContent({ ...contactContent, address: e.target.value })}
+                      placeholder="Opp. Kasangati Police Station"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Primary CTA Button Text</Label>
@@ -667,16 +696,13 @@ export default function LandingPageEditor() {
                   </div>
                 </div>
                 <div>
-                  <Label>WhatsApp Number (without +)</Label>
+                  <Label>WhatsApp Number (without + prefix)</Label>
                   <Input
                     value={contactContent.whatsapp_number}
                     onChange={(e) => setContactContent({ ...contactContent, whatsapp_number: e.target.value })}
                     placeholder="256745368426"
                   />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Note: Phone, Email, and Address are managed in Settings → Business Info
-                </p>
                 <Button onClick={saveContact} className="gap-2" disabled={upsertContentMutation.isPending}>
                   <Save className="h-4 w-4" />
                   Save Contact Section
