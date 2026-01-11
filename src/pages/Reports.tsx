@@ -327,16 +327,16 @@ const Reports = () => {
         if (!productStats[item.item_name]) {
           productStats[item.item_name] = { sold: 0, revenue: 0 };
         }
-        productStats[item.item_name].sold += item.quantity;
-        productStats[item.item_name].revenue += Number(item.subtotal);
+          productStats[item.item_name].sold += Number(item.quantity) || 0;
+          productStats[item.item_name].revenue += Number(item.subtotal) || 0;
       } else if (item.service_id) {
         if (!serviceStats[item.item_name]) {
           serviceStats[item.item_name] = { sold: 0, revenue: 0, coso: 0 };
         }
-        serviceStats[item.item_name].sold += item.quantity;
-        serviceStats[item.item_name].revenue += Number(item.subtotal);
-        const materialCost = item.services?.material_cost || 0;
-        serviceStats[item.item_name].coso += materialCost * item.quantity;
+          serviceStats[item.item_name].sold += Number(item.quantity) || 0;
+          serviceStats[item.item_name].revenue += Number(item.subtotal) || 0;
+          const materialCost = Number(item.services?.material_cost) || 0;
+          serviceStats[item.item_name].coso += materialCost * (Number(item.quantity) || 0);
       }
     });
   });
@@ -796,7 +796,7 @@ const Reports = () => {
                     <TableRow key={name}>
                       <TableCell className="font-medium">{name}</TableCell>
                       <TableCell className="text-right">{stats.sold}</TableCell>
-                      <TableCell className="text-right">{stats.revenue.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{(Number(stats.revenue) || 0).toLocaleString()}</TableCell>
                     </TableRow>
                   ))}
                   {topProducts.length === 0 && (
@@ -832,10 +832,10 @@ const Reports = () => {
                     <TableRow key={name}>
                       <TableCell className="font-medium">{name}</TableCell>
                       <TableCell className="text-right">{stats.sold}</TableCell>
-                      <TableCell className="text-right">{stats.revenue.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-destructive">{stats.coso.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{(Number(stats.revenue) || 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-destructive">{(Number(stats.coso) || 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right text-success font-bold">
-                        {(stats.revenue - stats.coso).toLocaleString()}
+                        {((Number(stats.revenue) || 0) - (Number(stats.coso) || 0)).toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))}
