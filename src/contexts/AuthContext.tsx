@@ -159,14 +159,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshUser = async () => {
-    const { data: { user: authUser } } = await supabaseClient.auth.getUser();
-    if (authUser) {
-      const userDetails = await fetchUserDetails(authUser);
-      setUser(userDetails);
+    try {
+      const { data: { user: authUser } } = await supabaseClient.auth.getUser();
+      if (authUser) {
+        const userDetails = await fetchUserDetails(authUser);
+        setUser(userDetails);
+      }
+    } catch (error) {
+      console.error('Error refreshing user:', error);
     }
   };
 
-  const signOut = async () => {
+  // Listen for profile updates via Realtime
+  useEffect(() => {
+    let mounted = true;
+
+    const subscription = supabaseClient
+      .channel('profiles-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${user?.id}`,
+        },
+        (payload) => {
+          if (mounted) {
+            console.log('Profile updated:', payload);
+            refreshUser();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [user?.id]);
+
+  // Listen for user_roles updates via Realtime
+  useEffect(() => {
+    let mounted = true;
+
+    const subscription = supabaseClient
+      .channel('user_roles-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${user?.id}`,
+        },
+        (payload) => {
+          if (mounted) {
+            console.log('User roles updated:', payload);
+            refreshUser();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [user?.id]);
     setIsLoading(true);
     await supabaseClient.auth.signOut();
     setUser(null);

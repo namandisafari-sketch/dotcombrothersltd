@@ -24,7 +24,7 @@ const Navigation = () => {
   const { isAdmin, departmentId } = useUserRole();
   const { isPerfumeDepartment } = useDepartment();
 
-  // Fetch user's navigation permissions
+  // Fetch user's navigation permissions with real-time updates
   const { data: userNavPermissions = [] } = useQuery({
     queryKey: ["user-nav-permissions", user?.id],
     queryFn: async () => {
@@ -42,7 +42,10 @@ const Navigation = () => {
         return [];
       }
     },
-    enabled: !!user?.id
+    enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   });
 
   // Get department info  

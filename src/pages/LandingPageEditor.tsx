@@ -186,6 +186,7 @@ export default function LandingPageEditor() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["landing-page-content-admin"] });
       queryClient.invalidateQueries({ queryKey: ["landing-page-content"] });
+      queryClient.invalidateQueries({ queryKey: ["service-showcase"] });
       toast.success("Content saved successfully!");
     },
     onError: () => {

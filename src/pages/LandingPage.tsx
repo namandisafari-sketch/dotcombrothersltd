@@ -118,7 +118,7 @@ export default function LandingPage() {
     },
   });
 
-  // Fetch all landing page content
+  // Fetch all landing page content with real-time updates
   const { data: pageContent } = useQuery({
     queryKey: ["landing-page-content"],
     queryFn: async () => {
@@ -129,9 +129,12 @@ export default function LandingPage() {
       if (error) throw error;
       return data || [];
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   });
 
-  // Fetch dynamic services from database
+  // Fetch dynamic services from database with real-time updates
   const { data: dbServices } = useQuery({
     queryKey: ["service-showcase"],
     queryFn: async () => {
@@ -143,6 +146,9 @@ export default function LandingPage() {
       if (error) throw error;
       return data;
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   });
 
   // Parse content by section
