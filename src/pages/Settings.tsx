@@ -143,23 +143,37 @@ const Settings = () => {
         }
       };
 
+      console.log("Saving settings payload:", settingsPayload);
+
       if (selectedDepartmentId && selectedDepartmentId !== "global") {
         const { data: existing } = await supabase.from("settings").select("id").eq("department_id", selectedDepartmentId).maybeSingle();
         if (existing) {
           const { error } = await supabase.from("settings").update(settingsPayload).eq("department_id", selectedDepartmentId);
-          if (error) throw error;
+          if (error) {
+            console.error("Update error:", error);
+            throw error;
+          }
         } else {
           const { error } = await supabase.from("settings").insert({ ...settingsPayload, department_id: selectedDepartmentId });
-          if (error) throw error;
+          if (error) {
+            console.error("Insert error:", error);
+            throw error;
+          }
         }
       } else {
         const { data: existing } = await supabase.from("settings").select("id").is("department_id", null).maybeSingle();
         if (existing) {
           const { error } = await supabase.from("settings").update(settingsPayload).is("department_id", null);
-          if (error) throw error;
+          if (error) {
+            console.error("Update global error:", error);
+            throw error;
+          }
         } else {
           const { error } = await supabase.from("settings").insert(settingsPayload);
-          if (error) throw error;
+          if (error) {
+            console.error("Insert global error:", error);
+            throw error;
+          }
         }
       }
     },
@@ -172,7 +186,7 @@ const Settings = () => {
     },
     onError: (error: any) => {
       console.error("Settings update error:", error);
-      toast.error("Failed to update settings");
+      toast.error(`Failed to update settings: ${error?.message || "Unknown error"}`);
     },
   });
 
