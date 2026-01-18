@@ -227,6 +227,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [user?.id]);
+
+  const signOut = async () => {
     setIsLoading(true);
     await supabaseClient.auth.signOut();
     setUser(null);
