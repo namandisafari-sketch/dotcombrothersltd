@@ -503,6 +503,7 @@ const PerfumePOS = () => {
           website: settings?.website || "",
         },
         seasonalRemark: settings?.seasonal_remark || "",
+        showBackPage: settings?.show_back_page === true,
         qrCodeUrl,
       };
 

@@ -299,7 +299,7 @@ export const generateReceiptHTML = (data: ReceiptData): string => {
         `}
       </div>
       
-      ${data.showBackPage !== false ? `
+      ${data.showBackPage === true ? `
       <!-- Back Page - System Info (continuous, no page break) -->
       <div class="back-page" style="min-height: 150px; padding: 15px 0; margin-top: 15px; border-top: 2px dashed #000;">
         <div style="text-align: center; font-size: 10px;">
