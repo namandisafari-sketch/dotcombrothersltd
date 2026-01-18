@@ -112,10 +112,14 @@ export default function LandingPage() {
       const { data, error } = await supabase
         .from("settings")
         .select("*")
+        .is("department_id", null)
         .maybeSingle();
       if (error) throw error;
       return data;
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   });
 
   // Fetch all landing page content with real-time updates
