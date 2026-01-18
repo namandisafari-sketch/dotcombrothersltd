@@ -44,11 +44,14 @@ function shouldSendScheduledReport(
   }
 
   // Calculate current time in the target timezone
-  const localTime = new Date(now.getTime() + (validatedOffset * 60 * 60 * 1000));
-  const currentHour = localTime.getUTCHours();
-  const currentMinute = localTime.getUTCMinutes();
-  const currentDay = localTime.getUTCDay(); // 0 = Sunday
-  const currentDate = localTime.getUTCDate();
+  // Create a date adjusted by timezone offset
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+  const localTime = new Date(utcTime + (validatedOffset * 60 * 60 * 1000));
+  
+  const currentHour = localTime.getHours();
+  const currentMinute = localTime.getMinutes();
+  const currentDay = localTime.getDay(); // 0 = Sunday
+  const currentDate = localTime.getDate();
 
   // Parse configured time (default to 08:00 if invalid)
   const [configHourStr, configMinStr] = (configuredTime || "08:00").split(":");
@@ -58,6 +61,8 @@ function shouldSendScheduledReport(
   // Format current time for logging
   const currentTimeFormatted = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
   const configuredTimeFormatted = `${String(configHour).padStart(2, '0')}:${String(configMin).padStart(2, '0')}`;
+
+  console.log(`⏰ Schedule check - Current time: ${currentTimeFormatted}, Configured: ${configuredTimeFormatted}, Timezone: UTC${validatedOffset >= 0 ? '+' : ''}${validatedOffset}`);
 
   // Check if current time is within the scheduled window
   // Since cron runs every 30 minutes, we check if we're in the correct hour and minute window
@@ -116,6 +121,7 @@ const handler = async (req: Request): Promise<Response> => {
     let reportPeriod = "current"; // current, previous, ytd
     let scheduledMode = false; // Called by cron job
     let forceMode = false; // Force send regardless of schedule
+    let diagnosticMode = false; // Check schedule without sending
 
     try {
       const body = await req.json();
@@ -123,6 +129,7 @@ const handler = async (req: Request): Promise<Response> => {
       reportPeriod = body?.period || "current";
       scheduledMode = body?.scheduled === true;
       forceMode = body?.force === true;
+      diagnosticMode = body?.diagnostic === true;
     } catch {
       // No body or invalid JSON
     }
@@ -142,6 +149,37 @@ const handler = async (req: Request): Promise<Response> => {
     if (settingsError) {
       console.error("Error fetching settings:", settingsError);
       throw new Error("Failed to fetch settings");
+    }
+
+    // Handle diagnostic mode
+    if (diagnosticMode) {
+      const frequency = settings?.report_email_frequency || "daily";
+      const configuredTime = settings?.report_email_time || "08:00";
+      const lastSentAt = settings?.settings_json?.last_report_sent_at || null;
+      const timezoneOffset = settings?.settings_json?.timezone_offset ?? 3;
+
+      const { shouldSend, period, reason } = shouldSendScheduledReport(frequency, configuredTime, lastSentAt, timezoneOffset);
+
+      return new Response(
+        JSON.stringify({
+          diagnostic: true,
+          timestamp: new Date().toISOString(),
+          settings: {
+            enabled: settings?.report_email_enabled,
+            email: settings?.admin_report_email,
+            frequency,
+            configuredTime,
+            timezoneOffset,
+            lastSentAt
+          },
+          schedule: {
+            shouldSend,
+            period,
+            reason
+          }
+        }, null, 2),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Check if reports are enabled
@@ -169,10 +207,12 @@ const handler = async (req: Request): Promise<Response> => {
       const lastSentAt = settings?.settings_json?.last_report_sent_at || null;
       const timezoneOffset = settings?.settings_json?.timezone_offset ?? 3;
 
+      console.log(`📋 Scheduled Report Check - Frequency: ${frequency}, Time: ${configuredTime}, Timezone: UTC${timezoneOffset >= 0 ? '+' : ''}${timezoneOffset}, Last sent: ${lastSentAt || 'Never'}`);
+
       const { shouldSend, period, reason } = shouldSendScheduledReport(frequency, configuredTime, lastSentAt, timezoneOffset);
 
       if (!shouldSend) {
-        console.log(`Scheduled report check: ${reason}`);
+        console.log(`⏭️  Skipping: ${reason}`);
         return new Response(
           JSON.stringify({
             message: reason,
