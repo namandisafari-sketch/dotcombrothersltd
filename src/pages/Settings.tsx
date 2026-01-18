@@ -167,6 +167,8 @@ const Settings = () => {
       toast.success("Settings updated successfully");
       queryClient.invalidateQueries({ queryKey: ["global-settings"] });
       queryClient.invalidateQueries({ queryKey: ["department-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["public-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: (error: any) => {
       console.error("Settings update error:", error);
