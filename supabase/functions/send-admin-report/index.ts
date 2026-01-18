@@ -37,8 +37,14 @@ function shouldSendScheduledReport(
 ): { shouldSend: boolean; period: string; reason: string } {
   const now = new Date();
 
+  // Validate timezone offset (must be between -12 and +14)
+  const validatedOffset = Math.max(-12, Math.min(14, timezoneOffset));
+  if (validatedOffset !== timezoneOffset) {
+    console.warn(`Invalid timezone offset ${timezoneOffset}. Using validated offset ${validatedOffset}`);
+  }
+
   // Calculate current time in the target timezone
-  const localTime = new Date(now.getTime() + (timezoneOffset * 60 * 60 * 1000));
+  const localTime = new Date(now.getTime() + (validatedOffset * 60 * 60 * 1000));
   const currentHour = localTime.getUTCHours();
   const currentMinute = localTime.getUTCMinutes();
   const currentDay = localTime.getUTCDay(); // 0 = Sunday
@@ -49,15 +55,22 @@ function shouldSendScheduledReport(
   const configHour = parseInt(configHourStr, 10) || 8;
   const configMin = parseInt(configMinStr, 10) || 0;
 
-  // Check if current hour matches configured hour
-  // We allow a window to ensure the cron job (which runs every 30m) catches it
-  const isCorrectHour = currentHour === configHour;
+  // Format current time for logging
+  const currentTimeFormatted = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+  const configuredTimeFormatted = `${String(configHour).padStart(2, '0')}:${String(configMin).padStart(2, '0')}`;
 
-  if (!isCorrectHour) {
+  // Check if current time is within the scheduled window
+  // Since cron runs every 30 minutes, we check if we're in the correct hour and minute window
+  // Allow 30 minute window to catch the cron execution
+  const isCorrectHour = currentHour === configHour;
+  const minuteDiff = Math.abs(currentMinute - configMin);
+  const isWithinWindow = minuteDiff <= 30 || (configMin < 30 && currentMinute < 30) || (configMin >= 30 && currentMinute >= 30);
+
+  if (!isCorrectHour || !isWithinWindow) {
     return {
       shouldSend: false,
       period: "current",
-      reason: `Not the scheduled hour. Current local: ${currentHour}:${currentMinute}, Configured: ${configHour}:${configMin}`
+      reason: `Not the scheduled time. Current: ${currentTimeFormatted}, Scheduled: ${configuredTimeFormatted} (Timezone: UTC${validatedOffset >= 0 ? '+' : ''}${validatedOffset})`
     };
   }
 
@@ -75,17 +88,17 @@ function shouldSendScheduledReport(
   // Check frequency rules
   switch (frequency) {
     case "daily":
-      return { shouldSend: true, period: "daily", reason: "Daily report scheduled" };
+      return { shouldSend: true, period: "daily", reason: `Daily report scheduled for ${configuredTimeFormatted} (Timezone: UTC${validatedOffset >= 0 ? '+' : ''}${validatedOffset})` };
     case "weekly":
       // Send on Monday (day 1)
       if (currentDay === 1) {
-        return { shouldSend: true, period: "weekly", reason: "Weekly report (Monday)" };
+        return { shouldSend: true, period: "weekly", reason: `Weekly report (Monday) scheduled for ${configuredTimeFormatted}` };
       }
       return { shouldSend: false, period: "current", reason: `Weekly report only sends on Monday. Today is day ${currentDay}` };
     case "monthly":
       // Send on 1st of month
       if (currentDate === 1) {
-        return { shouldSend: true, period: "previous", reason: "Monthly report (1st of month)" };
+        return { shouldSend: true, period: "previous", reason: `Monthly report (1st of month) scheduled for ${configuredTimeFormatted}` };
       }
       return { shouldSend: false, period: "current", reason: `Monthly report only sends on 1st. Today is day ${currentDate}` };
     default:
@@ -165,7 +178,8 @@ const handler = async (req: Request): Promise<Response> => {
             message: reason,
             frequency,
             configuredTime,
-            nextCheck: "Will check again on next cron run"
+            timezone: `UTC${timezoneOffset >= 0 ? '+' : ''}${timezoneOffset}`,
+            nextCheck: "Will check again on next cron run (every 30 minutes)"
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -173,7 +187,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       // Use the period determined by schedule
       reportPeriod = period;
-      console.log(`Scheduled report: ${reason} - Sending ${frequency} report for period: ${reportPeriod}`);
+      console.log(`✅ ${reason} - Sending ${frequency} report for period: ${reportPeriod}`);
     }
 
     // Calculate date range based on period

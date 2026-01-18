@@ -592,7 +592,6 @@ const Settings = () => {
                             }
                           />
                         </div>
-
                         {formData.report_email_enabled && (
                           <>
                             <div className="space-y-2 mb-4">
@@ -607,6 +606,9 @@ const Settings = () => {
                                   setFormData({ ...formData, report_email_time: e.target.value })
                                 }
                               />
+                              <p className="text-xs text-muted-foreground">
+                                ⏰ Report will be sent at this exact time in your configured timezone. The system checks every 30 minutes, so delivery occurs within the scheduled hour.
+                              </p>
                             </div>
 
                             <div className="space-y-2">
@@ -629,26 +631,31 @@ const Settings = () => {
 
                             <div className="space-y-2">
                               <Label>Timezone Offset (UTC)</Label>
-                              <div className="flex items-center gap-2">
-                                <Select
-                                  value={formData.timezone_offset.toString()}
-                                  onValueChange={(value) =>
-                                    setFormData({ ...formData, timezone_offset: parseInt(value) })
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Array.from({ length: 25 }, (_, i) => i - 12).map((offset) => (
-                                      <SelectItem key={offset} value={offset.toString()}>
-                                        UTC {offset >= 0 ? "+" : ""}{offset}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <p className="text-xs text-muted-foreground whitespace-nowrap">
-                                  (Uganda is UTC +3)
+                              <div className="space-y-2">
+                                <p className="text-xs text-muted-foreground">
+                                  Set your timezone to ensure reports are sent at the exact time you configure. Reports are scheduled in your local timezone.
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  <Select
+                                    value={formData.timezone_offset.toString()}
+                                    onValueChange={(value) =>
+                                      setFormData({ ...formData, timezone_offset: parseInt(value) })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {Array.from({ length: 27 }, (_, i) => i - 12).map((offset) => (
+                                        <SelectItem key={offset} value={offset.toString()}>
+                                          UTC {offset >= 0 ? "+" : ""}{offset}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <p className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950 p-2 rounded">
+                                  📍 Example: Uganda = UTC+3, Kenya = UTC+3, South Africa = UTC+2
                                 </p>
                               </div>
                             </div>
