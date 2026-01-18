@@ -230,7 +230,7 @@ const PerfumeSalesHistory = () => {
         whatsapp: settings?.whatsapp_number || "+256745368426",
       },
       seasonalRemark: settings?.seasonal_remark,
-      showBackPage: settings?.show_back_page !== false,
+      showBackPage: settings?.show_back_page === true,
     };
   };
 

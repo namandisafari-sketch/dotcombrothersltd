@@ -93,7 +93,7 @@ const Settings = () => {
         receipt_logo_url: (settings as any).receipt_logo_url || "",
         website: (settings as any).website || "",
         seasonal_remark: (settings as any).seasonal_remark || "",
-        show_back_page: (settings as any).show_back_page !== false,
+        show_back_page: (settings as any).show_back_page === true,
         report_email_enabled: (settings as any).report_email_enabled || false,
         report_email_time: (settings as any).report_email_time || "08:00",
         report_email_frequency: (settings as any).report_email_frequency || "daily",

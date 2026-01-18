@@ -524,7 +524,7 @@ const MobileMoney = () => {
           website: deptSettings?.website || undefined,
         },
         seasonalRemark: deptSettings?.seasonal_remark || undefined,
-        showBackPage: (deptSettings as any)?.show_back_page !== false,
+        showBackPage: (deptSettings as any)?.show_back_page === true,
       };
 
       // Handle mobile money payment

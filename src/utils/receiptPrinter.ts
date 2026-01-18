@@ -570,7 +570,7 @@ export const autoPrintReceipt = async (saleId: string, supabase: any): Promise<v
       },
       seasonalRemark: settings?.seasonal_remark,
       qrCodeUrl,
-      showBackPage: settings?.show_back_page !== false,
+      showBackPage: settings?.show_back_page === true,
     };
 
     const printed = await printReceipt(receiptData, false);

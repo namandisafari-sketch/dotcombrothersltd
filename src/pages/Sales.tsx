@@ -868,7 +868,7 @@ const Sales = () => {
         seasonalRemark: settings?.seasonal_remark || "",
         qrCodeUrl,
         date: new Date(saleTimestamp).toLocaleString(),
-        showBackPage: (settings as any)?.show_back_page !== false,
+        showBackPage: (settings as any)?.show_back_page === true,
       };
 
       // Reduce stock for all items
